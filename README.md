@@ -11,6 +11,9 @@ scouting and hunting with your phone:
   the phone lists it under *Maps → From your PC* and copies what it needs for offline use.
 - **OpenStreetMap** and other raster base maps (USGS topo, USGS imagery, OpenTopoMap,
   Esri), cached for **offline** use.
+  *OpenStreetMap's public servers block networks that bulk-download tiles; the app sends a proper
+  Referer, fetches OSM tiles one at a time, stops when the server says no and points you at
+  USGS/Esri (which is why USGS Topo is the default in North America).*
 - **Spots** (treestand, blind, trail cam, water, food plot, sign, kill site, camp,
   vehicle, hazard) with notes, bearings and distances.
 - **Track recording** with distance, time, elevation gain and GPX export.
@@ -314,6 +317,25 @@ the public hostname at `http://huntmap:8000`:
 docker network create huntmap-net      # add it to the huntmap and cloudflared services
 ```
 
+**Keeping the LAN stack and pointing your existing tunnel at it.** The container must speak *plain
+HTTP* to the tunnel, exactly like your other apps. Two ways:
+
+| Tunnel origin | Container settings | Notes |
+| --- | --- | --- |
+| `HTTP` → `http://<host-or-service>:595` | `HUNTMAP_HTTPS=0`, `HUNTMAP_PORT=595`, plus the proxy headers below | same pattern as your other apps; publish 595 and the tunnel reaches it |
+| `HTTPS` → `https://huntmap:8443` + **No TLS Verify** | keep `HUNTMAP_HTTPS=1` | Cloudflare accepts the self-signed cert; LAN keeps real TLS |
+
+Either way add `HUNTMAP_PROXY_SSL=1`, `HUNTMAP_FORWARDED_HOST=1`,
+`HUNTMAP_HOSTS=hunting.wilsonnet.dev` and `HUNTMAP_ORIGINS=https://hunting.wilsonnet.dev`.
+`huntmap` is the compose service name as seen *inside* the Docker network; from `cloudflared`
+running on the host use `localhost:<published port>`, from another container use the container name
+or the host's LAN address — inside a container `localhost` means the tunnel container itself.
+
+**Nothing listens on port 80.** The container has exactly two listeners: `HUNTMAP_PORT` (TLS by
+default) and `HUNTMAP_REDIRECT_PORT` (8080, plain HTTP → 308 to HTTPS). Publishing host port 80
+(`HUNTMAP_PUBLISH_HTTP_PORT=80`) exposes only the *redirect*, so a tunnel pointed there would follow
+the 308 to the LAN address and fail — point the tunnel straight at the HTTP listener instead.
+
 The stack sets what a TLS-terminating proxy needs:
 
 | Setting | Value | Why |
@@ -515,16 +537,28 @@ from the magnetometer and is independent of the network.
 | Provider | Notes |
 | --- | --- |
 | **USGS Topo / Imagery (US)** | Public domain. Default in North America. Best choice for offline hunting use in the US. |
-| **OpenStreetMap** | Community servers. Fine for normal viewing; **bulk downloading is against their tile usage policy**. |
-| **OpenTopoMap** | Community, CC-BY-SA, contour lines, max zoom 17. |
+| **OpenStreetMap** | Community servers. Fine for normal viewing; **bulk downloading is against their tile usage policy** (see below). |
+| **OpenTopoMap** | Community, CC-BY-SA, contour lines, max zoom 17. Same policy as OSM. |
 | **Esri World Imagery / Topo** | Free for light use; check Esri's terms before caching large areas. |
 
-The app sends a normal browser request, shows the required attribution, and keeps downloads
-small (hard limit 2,500 tiles per job, ~4 concurrent requests, polite delay). If a provider
-refuses a request (HTTP 403/429) the app says so instead of drawing the error image.
+The app sends a normal browser request **with a Referer** (OSM's policy rejects requests without
+one), shows the required attribution, and keeps downloads small: one request at a time for
+OSM/OpenTopoMap (600-tile cap), up to 4 parallel for USGS/Esri (2,500-tile cap). If a provider
+refuses a request the app says so instead of drawing the error image.
 
-For big offline areas the right answer is **your own PDF maps** (unlimited, precise, no
-policy issues) — that is why the PDF workflow exists.
+**"Access blocked" from OpenStreetMap** means their servers have blocked your *network* (usually
+after a large offline download — the policy forbids bulk use). It is per IP, not per device, and it
+lifts after a while. What to do:
+
+1. Switch the base map to **USGS Topo** (US, public domain) or **Esri World Topo/Imagery** — no
+   block, and USGS is the better hunting base map anyway.
+2. Map tiles you already viewed or downloaded keep working (the cache is checked before the block
+   is honoured).
+3. Don't retry in a loop: the app stops asking that provider for 10 minutes and tells you why.
+
+The app cannot and should not bypass a provider block (that is what proxies and VPNs for tile
+scraping are, and they get blocked too). For big offline areas the right answer is **your own PDF
+maps** (unlimited, precise, no policy issues) — that is why the PDF workflow exists.
 
 ---
 
@@ -612,8 +646,10 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (47 checks): load without errors, GPS fix, HUD coordinates/UTM, waypoint save +
-persistence, navigation bar, sun/moon panel, the built-in self-test, PDF open/rasterise, adding
+`tests/e2e.py` (60 checks): load without errors, GPS fix, HUD coordinates/UTM, base map default and
+tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
+page is never drawn and marks the provider blocked), waypoint save + persistence, navigation bar,
+sun/moon panel, the built-in self-test, PDF open/rasterise, adding
 a PDF through the real UI (file picker → rasterise → tap two control points → apply), north-up
 georeferencing, overlay pixels on the canvas, track recording while moving, GPX round-trip,
 reload persistence, service worker, a full **offline reload**, a **TIFF** map loaded through the
@@ -629,15 +665,16 @@ the PC's georeference.
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency.
 
-`tests/e2e_docker.sh` (28 checks, three container modes): builds the image, starts the HTTPS
+`tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,
 that private files are hidden and `/upload/` needs a login, that plain `http://` gets a 308 to the
 published HTTPS port (and following it works), uploads a map through the API, downloads it again,
 restarts and confirms map + admin survived the volume; then starts a second container in
 "TLS terminated upstream" mode (pinned host name, `X-Forwarded-Proto/Host`) and checks it goes
-healthy, serves plain HTTP, accepts an upload and returns `file_url` on the public origin; finally
-starts a third container on a custom port (`HUNTMAP_PORT=9443`, published as 19443) and checks
-gunicorn binds it and the healthcheck still passes.
+healthy, serves plain HTTP, accepts an upload, returns `file_url` on the public origin, and that the
+admin login POST passes CSRF from the https origin; finally starts a third container on a custom
+port (`HUNTMAP_PORT=9443`, published as 19443) and checks gunicorn binds it and the healthcheck
+still passes.
 
 `tests/check_compose.py` (20 checks) renders each stack with different variables and asserts what
 would be published: `HUNTMAP_PORT` alone moves both sides, `HUNTMAP_PUBLISH_PORT` moves only the host

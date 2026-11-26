@@ -91,6 +91,60 @@ def main():
                   "hits=%s misses=%s err=%s" % (base["hits"], base["misses"], base["lastError"]))
             page.screenshot(path=os.path.join(SHOTS, "01-map.png"))
 
+            # ---------------- tile policy handling ----------------
+            policy = page.evaluate("""(async () => {
+                const T = window.Hunt.Tiles;
+                const realFetch = window.fetch;
+                const seen = [];
+                window.fetch = (u, o) => { seen.push((o && o.referrerPolicy) || ''); return realFetch(u, o); };
+                let got = null;
+                try { got = await T.get('esri_topo', 17, 38630, 49380); } catch (e) { got = null; }
+                window.fetch = realFetch;
+                return {
+                    referrers: seen,
+                    gotTile: !!got,
+                    osmParallel: T.policyFor('osm').parallel,
+                    esriParallel: T.policyFor('esri_topo').parallel,
+                    osmLimit: T.maxDownloadFor('osm'),
+                    usgsLimit: T.maxDownloadFor('usgs_topo')
+                };
+            })()""")
+            check("tile requests send a Referer (OSM policy rejects none)",
+                  bool(policy["referrers"]) and all(r == "origin" for r in policy["referrers"]),
+                  policy["referrers"])
+            check("OSM downloads are throttled to one request", policy["osmParallel"] == 1, policy["osmParallel"])
+            check("USGS/Esri downloads stay parallel", policy["esriParallel"] == 4, policy["esriParallel"])
+            check("OSM offline area is capped lower than USGS",
+                  policy["osmLimit"] < policy["usgsLimit"], (policy["osmLimit"], policy["usgsLimit"]))
+
+            blocked = page.evaluate("""(async () => {
+                const T = window.Hunt.Tiles;
+                const calls = [];
+                const realFetch = window.fetch;
+                T.onError = (p, s, b) => calls.push([p, s, !!b]);
+                window.fetch = (url, opts) => {
+                    if (String(url).indexOf('tile.openstreetmap.org') !== -1) {
+                        return Promise.resolve(new Response(
+                            '<html><body>Access blocked</body></html>',
+                            { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
+                    }
+                    return realFetch(url, opts);
+                };
+                T.clearBlock();
+                let img = null;
+                try { img = await T.get('osm', 13, 2410, 3080); } catch (e) { img = 'threw'; }
+                window.fetch = realFetch;
+                const out = { img: img === null ? 'null' : String(img), calls, blocked: !!T.blocked,
+                              isBlocked: T.isBlocked('osm'), lastError: T.lastError };
+                T.clearBlock();
+                T.onError = () => {};
+                return out;
+            })()""")
+            check("blocked HTML page is not drawn as a tile", blocked["img"] == "null", blocked["img"])
+            check("block page marks the provider blocked", blocked["isBlocked"] is True, blocked)
+            check("block page reports the reason to the UI",
+                  any(c[0] == "osm" and c[2] is True for c in blocked["calls"]), blocked["calls"])
+
             # ---------------- waypoint ----------------
             page.click("#btnMark")
             page.wait_for_timeout(500)

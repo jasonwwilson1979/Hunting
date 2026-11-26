@@ -650,11 +650,16 @@
 
   /* Tiles refused by a provider (policy, key, quota): say so once per provider. */
   const tileWarned = {};
-  function onTileError(providerId, status) {
-    if (tileWarned[providerId] === status) return;
-    tileWarned[providerId] = status;
+  function onTileError(providerId, status, blocked) {
+    const key = status + (blocked ? ':blocked' : '');
+    if (tileWarned[providerId] === key) return;
+    tileWarned[providerId] = key;
     const name = T.provider(providerId).name;
-    U.toast(name + ' refused the map tiles (HTTP ' + status + '). Choose another base map in Maps.', 'err', 5200);
+    if (blocked) {
+      U.toast(name + ' blocked this network (tile usage policy). Switch to USGS Topo or Esri in Maps, or try again later.', 'err', 8000);
+    } else {
+      U.toast(name + ' refused the map tiles (HTTP ' + status + '). Choose another base map in Maps.', 'err', 5200);
+    }
     if (map) map.invalidate();
   }
   /* ------------------------------ waypoints UI ------------------------------ */
@@ -896,6 +901,8 @@
         map.provider = id;
         map.tilesEnabled = true;
         T.lastError = null;
+        T.clearBlock();
+        tileWarned[id] = null;
         map.invalidate();
         D.saveSettings();
         refreshTileStats();
@@ -990,16 +997,19 @@
     const zmin = U.clamp(parseInt(el.dlZoomMin.value, 10) || 12, 2, 19);
     const zmax = U.clamp(parseInt(el.dlZoomMax.value, 10) || 15, zmin, 19);
     const est = T.estimate(b, zmin, zmax);
+    const limit = T.maxDownloadFor(D.settings.provider);
+    const osmNote = (D.settings.provider === 'osm' || D.settings.provider === 'topo')
+      ? ' \u00b7 OpenStreetMap blocks bulk downloads, keep it small' : '';
     el.dlEstimate.textContent = est.count + ' tiles \u2248 ' + est.approxMB.toFixed(1) + ' MB' +
-      (est.count > T.MAX_DOWNLOAD
-        ? ' \u2014 over the ' + T.MAX_DOWNLOAD + ' tile limit, lower the zoom range' : '');
-    return { bounds: b, zmin: zmin, zmax: zmax, est: est };
+      (est.count > limit
+        ? ' \u2014 over the ' + limit + ' tile limit, lower the zoom range' : osmNote);
+    return { bounds: b, zmin: zmin, zmax: zmax, est: est, limit: limit };
   }
   function downloadTiles() {
     if (S.downloading) return;
     const info = estimateTiles();
     if (!info.est.count) { U.toast('Nothing to download in this view', 'err'); return; }
-    if (info.est.count > T.MAX_DOWNLOAD) {
+    if (info.est.count > info.limit) {
       U.toast('Too many tiles \u2014 shrink the view or lower the zoom range', 'err');
       return;
     }
@@ -1030,10 +1040,16 @@
           S.downloading = false;
           el.btnDlStart.disabled = false;
           el.btnDlCancel.hidden = true;
-          el.dlStatus.textContent = res.cancelled
-            ? 'Stopped after ' + res.done + ' of ' + res.total + ' tiles.'
-            : 'Done: ' + res.done + ' tiles saved' + (res.failed ? ', ' + res.failed + ' failed' : '') + '.';
-          U.toast(res.cancelled ? 'Download stopped' : 'Offline tiles saved', res.cancelled ? '' : 'ok');
+          if (res.blocked) {
+            el.dlStatus.textContent = 'Stopped after ' + res.done + ' of ' + res.total +
+              ' tiles: the provider blocked this network. Switch to USGS Topo or Esri.';
+            U.toast('Provider blocked the download \u2014 switch base map', 'err', 7000);
+          } else {
+            el.dlStatus.textContent = res.cancelled
+              ? 'Stopped after ' + res.done + ' of ' + res.total + ' tiles.'
+              : 'Done: ' + res.done + ' tiles saved' + (res.failed ? ', ' + res.failed + ' failed' : '') + '.';
+            U.toast(res.cancelled ? 'Download stopped' : 'Offline tiles saved', res.cancelled ? '' : 'ok');
+          }
           refreshTileStats();
           map.invalidate();
         }).catch(function (e) {
@@ -1908,7 +1924,8 @@
     if (!('serviceWorker' in navigator)) return;
     const host = location.hostname;
     if (!(location.protocol === 'https:' || host === 'localhost' || host === '127.0.0.1')) return;
-    navigator.serviceWorker.register('sw.js').then(function (reg) {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      reg.update().catch(function () {});
       if (reg.waiting) U.toast('A new version is ready \u2014 reopen the app to update', 'ok', 4000);
       reg.addEventListener('updatefound', function () {
         const nw = reg.installing;

@@ -46,6 +46,20 @@
   /** HTTP failure of the last tile request (403 = provider refused, see policy). */
   T.lastError = null;
 
+  /** Set when a provider answers with an HTML page instead of an image ("Access blocked"). */
+  T.blocked = null;
+
+  /* Tile servers expect a Referer: OpenStreetMap's usage policy rejects requests
+     that send none ("Access blocked"). 'origin' sends only the site name. */
+  const REFERRER = 'origin';
+
+  /** OSM's public servers ask for one request at a time; USGS/Esri tolerate more. */
+  const POLITE = {
+    osm: { parallel: 1, delay: 150 },
+    topo: { parallel: 1, delay: 150 }
+  };
+  T.policyFor = function (id) { return POLITE[id] || { parallel: 4, delay: 30 }; };
+
   /**
    * Sensible default base map for a location. USGS topo is public domain and
    * caching-friendly, so prefer it in North America; OSM elsewhere.
@@ -54,6 +68,14 @@
     if (lat != null && lon != null && lat > 14 && lat < 73 && lon > -170 && lon < -50) return 'usgs_topo';
     return 'osm';
   };
+
+  /** A provider is "blocked" for 10 minutes after it sent a block page. */
+  T.isBlocked = function (providerId) {
+    return !!(T.blocked && T.blocked.provider === providerId &&
+      Date.now() - T.blocked.at < 10 * 60 * 1000);
+  };
+
+  T.clearBlock = function () { T.blocked = null; };
 
   T.tileUrl = function (providerId, z, x, y) {
     const p = T.provider(providerId);
@@ -107,7 +129,7 @@
     return new Promise(function (resolve, reject) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.referrerPolicy = 'no-referrer';
+      img.referrerPolicy = REFERRER;
       img.onload = function () { resolve(img); };
       img.onerror = function () { reject(new Error('img-failed')); };
       img.src = url;
@@ -137,6 +159,9 @@
         });
       }
       if (navigator.onLine === false) { T.stats.misses++; return null; }
+      // Recently blocked by this provider: do not hammer it. Cached tiles above
+      // still render, so the map keeps working with what is already saved.
+      if (T.isBlocked(providerId)) { T.stats.misses++; return null; }
       return fetchTile(url).then(function (blob) {
         if (!blob) return null;
         return getCache().then(function (cache) {
@@ -149,10 +174,16 @@
       }).catch(function (err) {
         // HTTP refusals (403/404/429) must never be drawn: many tile servers
         // answer with an HTML "blocked" image, which looks like map data.
-        if (err && err.status) {
-          T.lastError = { provider: providerId, status: err.status, at: Date.now() };
+        if (err && (err.status || err.blocked)) {
+          T.lastError = { provider: providerId, status: err.status || 0, blocked: !!err.blocked, at: Date.now() };
           T.stats.errors++;
-          if (T.onError) { try { T.onError(providerId, err.status); } catch (e) {} }
+          if (err.blocked) {
+            const first = !T.isBlocked(providerId);
+            T.blocked = { provider: providerId, at: Date.now() };
+            if (T.onError && first) { try { T.onError(providerId, err.status || 0, true); } catch (e) {} }
+          } else if (T.onError) {
+            try { T.onError(providerId, err.status, false); } catch (e) {}
+          }
           return null;
         }
         // CORS-less providers: render directly, uncached.
@@ -164,11 +195,20 @@
 
   function fetchTile(url) {
     pending.add(url);
-    return fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
+    return fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: REFERRER })
       .then(function (r) {
         if (!r.ok) {
           const err = new Error('http-' + r.status);
           err.status = r.status;
+          throw err;
+        }
+        // OSM answers "Access blocked" with an HTML page and status 200, so a
+        // plain !r.ok check is not enough: it would be decoded as a broken image.
+        const type = (r.headers.get('content-type') || '').toLowerCase().trim();
+        if (type && type.indexOf('image/') !== 0) {
+          const err = new Error('not-an-image');
+          err.status = r.status;
+          err.blocked = true;
           throw err;
         }
         return r.blob();
@@ -221,31 +261,39 @@
   }
 
   T.MAX_DOWNLOAD = 2500;
+
+  /** OSM's policy forbids bulk downloading, so keep those areas small. */
+  T.maxDownloadFor = function (providerId) {
+    return (providerId === 'osm' || providerId === 'topo') ? 600 : T.MAX_DOWNLOAD;
+  };
+
   T._cancel = false;
 
   /**
    * Download tiles for a bounds/zoom range into the Cache API.
-   * opts: {provider, bounds, minZoom, maxZoom, onProgress, onDone}
+   * opts: {provider, bounds, minZoom, maxZoom, onProgress}
    */
   T.download = function (opts) {
     const prov = T.provider(opts.provider);
     if (!prov.url) return Promise.reject(new Error('No base map provider selected'));
     const list = buildList(opts.bounds, opts.minZoom, opts.maxZoom, prov.maxZoom);
     if (!list.length) return Promise.reject(new Error('No tiles in this area'));
-    if (list.length > T.MAX_DOWNLOAD) list.length = T.MAX_DOWNLOAD;
+    const limit = T.maxDownloadFor(opts.provider);
+    if (list.length > limit) list.length = limit;
 
     T._cancel = false;
     const total = list.length;
-    let done = 0, failed = 0, cached = 0, idx = 0;
-    const CONCURRENCY = 4;
+    let done = 0, failed = 0, cached = 0, idx = 0, blocked = false;
+    const policy = T.policyFor(opts.provider);
+    const CONCURRENCY = policy.parallel;
     const progress = opts.onProgress || function () {};
 
     return getCache().then(function (cache) {
       return new Promise(function (resolve) {
         function next() {
-          if (T._cancel) { resolve({ total: total, done: done, failed: failed, cached: cached, cancelled: true }); return; }
+          if (T._cancel) { resolve({ total: total, done: done, failed: failed, cached: cached, blocked: blocked, cancelled: true }); return; }
           if (idx >= list.length) {
-            if (done >= total) resolve({ total: total, done: done, failed: failed, cached: cached, cancelled: false });
+            if (done >= total) resolve({ total: total, done: done, failed: failed, cached: cached, blocked: blocked, cancelled: false });
             return;
           }
           const t = list[idx++];
@@ -253,21 +301,26 @@
           const skip = cache ? cache.match(url) : Promise.resolve(null);
           skip.then(function (hit) {
             if (hit) { cached++; done++; progress({ done: done, total: total, cached: cached, failed: failed }); next(); return; }
-            return fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
-              .then(function (r) {
-                if (!r.ok) throw new Error('http-' + r.status);
-                return r.blob().then(function (blob) {
-                  if (cache) {
-                    try { cache.put(url, new Response(blob, { headers: { 'Content-Type': 'image/png' } })); }
-                    catch (e) { /* quota exceeded */ }
-                  }
-                });
+            return fetchTile(url)
+              .then(function (blob) {
+                if (cache) {
+                  try { cache.put(url, new Response(blob, { headers: { 'Content-Type': 'image/png' } })); }
+                  catch (e) { /* quota exceeded */ }
+                }
+                done++;
               })
-              .then(function () { done++; })
-              .catch(function () { failed++; done++; })
+              .catch(function (e) {
+                failed++;
+                done++;
+                if (e && e.blocked) {
+                  blocked = true;
+                  T.blocked = { provider: opts.provider, at: Date.now() };
+                  T._cancel = true;          // stop hammering a server that said no
+                }
+              })
               .then(function () {
-                progress({ done: done, total: total, cached: cached, failed: failed });
-                setTimeout(next, 30);           // be polite to the tile server
+                progress({ done: done, total: total, cached: cached, failed: failed, blocked: blocked });
+                setTimeout(next, policy.delay);           // be polite to the tile server
               });
           }).catch(function () { failed++; done++; next(); });
         }

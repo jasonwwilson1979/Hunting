@@ -136,6 +136,23 @@ check "file_url uses the public https origin" \
 check "upload page redirects to login" \
   "$(app -o /dev/null -w '%{redirect_url}' "$PROXY_BASE/upload/" | grep -q '/admin/login/?next=/upload/'; echo $?)"
 
+echo "== logging in through the proxy (CSRF + https origin)"
+JAR="$(mktemp)"
+LOGIN_HTML="$(mktemp)"
+app -c "$JAR" "$PROXY_BASE/admin/login/" > "$LOGIN_HTML"
+TOKEN="$(grep -o 'name="csrfmiddlewaretoken" value="[^"]*"' "$LOGIN_HTML" | head -1 | sed 's/.*value="//;s/"$//')"
+check "login form rendered with a CSRF token" "$([ -n "$TOKEN" ]; echo $?)"
+LOGIN_STATUS="$(app -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code}' \
+  -H "Origin: https://${PROXY_HOST}" -H "Referer: https://${PROXY_HOST}/admin/login/" \
+  --data-urlencode "csrfmiddlewaretoken=${TOKEN}" \
+  --data-urlencode "username=admin" --data-urlencode "password=e2e-password" \
+  --data-urlencode "next=/upload/" "$PROXY_BASE/admin/login/")"
+check "login POST accepted behind the proxy (${LOGIN_STATUS}, not 403)" \
+  "$([ "$LOGIN_STATUS" = 302 ]; echo $?)"
+check "upload page opens once logged in" \
+  "$(app -b "$JAR" -o /dev/null -w '%{http_code}' "$PROXY_BASE/upload/" | grep -qx 200; echo $?)"
+rm -f "$JAR" "$LOGIN_HTML"
+
 echo "== phase 3: custom ports (HUNTMAP_PORT=$CUSTOM_INNER, host $CUSTOM_PORT)"
 docker run -d --name "$CUSTOM_NAME" \
   -p "127.0.0.1:${CUSTOM_PORT}:${CUSTOM_INNER}" \
@@ -157,7 +174,7 @@ check "gunicorn bound to ${CUSTOM_INNER} (not the default)" \
 
 echo
 if [ "$failures" -eq 0 ]; then
-  echo "All container checks passed (28 checks)."
+  echo "All container checks passed (32 checks)."
   [ "${KEEP:-0}" = "1" ] && echo "Containers left running: $BASE/, $PROXY_BASE/, https://127.0.0.1:${CUSTOM_PORT}/"
 else
   echo "$failures container check(s) failed."
