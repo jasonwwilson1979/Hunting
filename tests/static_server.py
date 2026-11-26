@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-HuntMap development server.
+Plain static server for the HuntMap app - test helper only.
 
-GPS, service workers and offline caching need a "secure context":
-https:// or http://localhost . To test on an iPhone over your local Wi-Fi,
-run this with --https and accept the self-signed certificate once.
+The real deployment is the Django server in ``server/`` (Docker/Portainer), which
+serves the app *and* the map library. This script exists so ``tests/e2e.py`` can
+exercise the app with no Django around (offline/service-worker behaviour).
 
-    python3 serve.py                  # http://localhost:8080 (desktop testing)
-    python3 serve.py --https          # https on all interfaces, for the phone
-    python3 serve.py --https --port 8443
+    python3 tests/static_server.py                # http://localhost:8080
+    python3 tests/static_server.py --https        # https on all interfaces
+    python3 tests/static_server.py --https --port 8443
 
 Port, bind address and TLS can also come from the environment (same names the
 container uses), and command line flags still win:
 
-    HUNTMAP_PORT=9443 HUNTMAP_BIND=127.0.0.1 HUNTMAP_HTTPS=1 python3 serve.py
+    HUNTMAP_PORT=9443 HUNTMAP_BIND=127.0.0.1 HUNTMAP_HTTPS=1 \
+        python3 tests/static_server.py
 
-Self-signed certificates are created in .certs/ with openssl on first run.
+Self-signed certificates are created in tests/.certs/ with openssl on first run.
 """
 import argparse
 import http.server
@@ -25,8 +26,9 @@ import ssl
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-CERT_DIR = os.path.join(ROOT, ".certs")
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)           # the app itself lives one level up
+CERT_DIR = os.path.join(HERE, ".certs")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

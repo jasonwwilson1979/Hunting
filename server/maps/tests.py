@@ -282,6 +282,7 @@ class MapLibraryTests(TestCase):
         bad = self.client.post("/api/login/", json.dumps({"username": "carol", "password": "nope"}),
                                content_type="application/json")
         self.assertEqual(bad.status_code, 401)
+        self.assertEqual(bad.json()["code"], "bad-credentials")
 
         ok = self.client.post("/api/login/", json.dumps({"username": "carol", "password": "carol-pass-1"}),
                               content_type="application/json")
@@ -290,6 +291,24 @@ class MapLibraryTests(TestCase):
 
         self.assertEqual(self.client.post("/api/logout/").status_code, 200)
         self.assertIsNone(self.client.get("/api/me/").json()["user"])
+
+    def test_login_forgives_case_and_stray_spaces(self):
+        get_user_model().objects.create_user("Caroline", password="carol-pass-1")
+        # "CAROLINE" plus a trailing space (phone keyboards / autofill do this)
+        response = self.client.post("/api/login/",
+                                    json.dumps({"username": " CAROLINE ", "password": "carol-pass-1 "}),
+                                    content_type="application/json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["user"], "Caroline")
+
+    def test_login_with_no_accounts_explains_itself(self):
+        get_user_model().objects.all().delete()      # a fresh server with no admin
+        response = self.client.post("/api/login/",
+                                    json.dumps({"username": "admin", "password": "whatever"}),
+                                    content_type="application/json")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "no-accounts")
+        self.assertIn("no accounts", response.json()["error"].lower())
 
     @override_settings(HUNTMAP_REQUIRE_AUTH=True)
     def test_require_auth_hides_the_library(self):

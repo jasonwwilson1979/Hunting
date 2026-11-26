@@ -26,17 +26,33 @@
     if (SY.onChange) { try { SY.onChange(); } catch (e) { console.error(e); } }
   }
 
+  /** Turn a failed response into an Error that carries the server's message. */
+  function httpError(res) {
+    const err = new Error('HTTP ' + res.status);
+    err.status = res.status;
+    return res.text().then(function (text) {
+      try {
+        const body = JSON.parse(text);
+        if (body && body.error) { err.message = body.error; err.code = body.code; }
+      } catch (e) {
+        // An HTML page here almost always means a proxy or Cloudflare Access
+        // intercepted the request instead of the HuntMap server.
+        if (text && text.trim().charAt(0) === '<') {
+          err.message = 'The server answered with a web page, not JSON (proxy login?)';
+          err.code = 'html-response';
+        }
+      }
+      throw err;
+    });
+  }
+
   function api(path, opts) {
     return fetch(SY.base + path, Object.assign({
       headers: { Accept: 'application/json' },
       cache: 'no-store',
       credentials: 'same-origin'
     }, opts || {})).then(function (res) {
-      if (!res.ok) {
-        const err = new Error('HTTP ' + res.status);
-        err.status = res.status;
-        throw err;
-      }
+      if (!res.ok) return httpError(res);
       return res.json();
     });
   }
@@ -109,11 +125,7 @@
       credentials: 'same-origin',
       cache: 'no-store'
     }).then(function (res) {
-      if (!res.ok) {
-        const err = new Error('HTTP ' + res.status);
-        err.status = res.status;
-        throw err;
-      }
+      if (!res.ok) return httpError(res);
       return res.json();
     });
   };

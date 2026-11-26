@@ -22,4 +22,4 @@ server/.certs
 venv
 
 # dev extras
-serve.py
+tests

@@ -172,9 +172,12 @@
           return loadImage(blob).then(function (img) { memSet(url, img); return img; });
         });
       }).catch(function (err) {
-        // HTTP refusals (403/404/429) must never be drawn: many tile servers
+        // HTTP refusals (403/429/5xx) must never be drawn: many tile servers
         // answer with an HTML "blocked" image, which looks like map data.
         if (err && (err.status || err.blocked)) {
+          // A 404 just means "no tile published here" (edges of a dataset,
+          // zoom levels past the source's coverage) - not a provider problem.
+          if (err.status === 404 && !err.blocked) { T.stats.misses++; return null; }
           T.lastError = { provider: providerId, status: err.status || 0, blocked: !!err.blocked, at: Date.now() };
           T.stats.errors++;
           if (err.blocked) {

@@ -45,7 +45,7 @@
     'toggleTiles', 'overlayList', 'btnAddMap', 'btnRecalibrate', 'dlZoomMin', 'dlZoomMax',
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
     'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
-    'accountState', 'accountNote', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'accountState', 'accountNote', 'signServer', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -199,6 +199,7 @@
   function renderSync() {
     if (!el.syncSection || !H.Sync) return;
     const sync = H.Sync;
+    renderAccount();
     el.syncSection.hidden = !sync.state.enabled;
     if (!sync.state.enabled) return;
 
@@ -211,7 +212,6 @@
         : sync.state.requireAuth ? 'Sign in (Tools → Account) to see your maps'
         : 'Not signed in \u2014 showing the shared library';
     }
-    renderAccount();
 
     fillPlaceSelect(el.syncState, 'Any state', sync.state.places.states || [], sync.state.stateFilter);
     const counties = (sync.state.stateFilter &&
@@ -328,6 +328,18 @@
   }
 
   /** Tools → Account card: who is signed in, and the buttons that apply. */
+  function openSignInSheet() {
+    el.signNote.textContent = 'A new account needs a password of at least 8 characters. ' +
+      'The library keeps your maps separate; maps without an owner stay shared.';
+    try {
+      el.signServer.textContent = new URL('api/login/', location.href).href;
+    } catch (e) {
+      el.signServer.textContent = 'api/login/';
+    }
+    openSheet('sheetSignIn');
+    el.signUser.focus();
+  }
+
   function renderAccount() {
     if (!el.accountState) return;
     const sync = H.Sync || { state: {} };
@@ -405,6 +417,12 @@
     const user = el.signUser.value.trim();
     const pass = el.signPass.value;
     if (!user || !pass) { U.toast('User name and password, please', 'err'); return; }
+    if (!H.Sync.state.enabled && !H.Sync.available()) {
+      el.signNote.textContent = 'Accounts live on the HuntMap server \u2014 this page was not ' +
+        'served by it. Open the app from your server address (or tunnel hostname) instead.';
+      U.toast('No HuntMap server on this address', 'err', 4200);
+      return;
+    }
     el.btnSignInGo.disabled = true;
     el.btnSignUpGo.disabled = true;
     const call = mode === 'register' ? H.Sync.register(user, pass) : H.Sync.login(user, pass);
@@ -412,6 +430,7 @@
       el.btnSignInGo.disabled = false;
       el.btnSignUpGo.disabled = false;
       el.signPass.value = '';
+      el.signNote.textContent = 'Signed in. Maps you add can be copied to your library.';
       closeSheets();
       U.toast((mode === 'register' ? 'Account created \u2014 signed in as ' : 'Signed in as ') +
         (json.user || user), 'ok', 3000);
@@ -419,10 +438,25 @@
     }).catch(function (err) {
       el.btnSignInGo.disabled = false;
       el.btnSignUpGo.disabled = false;
-      el.signNote.textContent = err && err.status === 401
-        ? 'Wrong user name or password.'
-        : 'Could not sign in: ' + ((err && err.message) || err);
-      U.toast('Sign-in failed', 'err');
+      const status = err && err.status;
+      const code = err && err.code;
+      let msg;
+      if (code === 'bad-credentials' || status === 401) {
+        msg = (err && err.message) || 'Wrong user name or password.';
+      } else if (status === 404) {
+        msg = 'This server is too old for accounts (no /api/login/). ' +
+          'Rebuild or redeploy the container, then reload the app.';
+      } else if (code === 'html-response') {
+        msg = 'The server replied with a web page instead of JSON \u2014 a proxy or ' +
+          'Cloudflare Access is intercepting it. Sign in there first, or exclude /api/.';
+      } else if (!navigator.onLine) {
+        msg = 'No network connection.';
+      } else {
+        msg = 'Could not sign in: ' + ((err && err.message) || err) +
+          (status ? ' (HTTP ' + status + ')' : '');
+      }
+      el.signNote.textContent = msg;
+      U.toast(msg, 'err', 6000);
     });
   }
 
@@ -2311,12 +2345,7 @@
       H.Sync.state.countyFilter = el.syncCounty.value || '';
       renderSync();
     });
-    U.on(el.btnAccountSignIn, 'click', function () {
-      el.signNote.textContent = 'A new account needs a password of at least 8 characters. ' +
-        'The library keeps your maps separate; maps without an owner stay shared.';
-      openSheet('sheetSignIn');
-      el.signUser.focus();
-    });
+    U.on(el.btnAccountSignIn, 'click', openSignInSheet);
     U.on(el.btnAccountSignOut, 'click', function () {
       if (!H.Sync) return;
       H.Sync.logout().then(function () {

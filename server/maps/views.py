@@ -357,9 +357,29 @@ def api_login(request):
         payload = request.POST
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
+    User = get_user_model()
+
     user = authenticate(request, username=username, password=password)
+    if user is None and username:
+        # Be forgiving about "Admin" vs "admin" and about a stray trailing space
+        # that a phone keyboard or a password manager can add.
+        match = User.objects.filter(username__iexact=username).first()
+        if match is not None:
+            for candidate in {password, password.strip()}:
+                user = authenticate(request, username=match.username, password=candidate)
+                if user is not None:
+                    break
     if user is None:
-        return JsonResponse({"error": "Wrong user name or password"}, status=401)
+        if User.objects.filter(is_active=True).count() == 0:
+            return JsonResponse({
+                "error": "This server has no accounts yet. Create one, or set "
+                         "HUNTMAP_ADMIN_PASSWORD and restart the container.",
+                "code": "no-accounts",
+            }, status=401)
+        return JsonResponse({"error": "Wrong user name or password", "code": "bad-credentials"},
+                            status=401)
+    if not user.is_active:
+        return JsonResponse({"error": "That account is disabled", "code": "inactive"}, status=401)
     login(request, user)
     return JsonResponse({"ok": True, "user": user.username,
                          "is_staff": user.is_staff,

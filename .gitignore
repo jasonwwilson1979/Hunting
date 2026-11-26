@@ -1,9 +1,13 @@
-# local HTTPS certificates created by serve.py --https
+# local HTTPS certificates created by the dev servers
 .certs/
 server/.certs/
+tests/.certs/
 
 # local secrets / port overrides for docker compose
 .env
+
+# build output (nothing is built: the app is plain files)
+dist/
 
 # test artefacts (the README screenshots are kept)
 tests/screenshots/*

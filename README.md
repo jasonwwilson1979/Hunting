@@ -35,44 +35,42 @@ or locations.
 
 ## 1. Run it
 
-### On a computer (quick look)
+The supported way to run HuntMap is the **Django server** — either in Docker/Portainer (section 2)
+or directly on a machine. It serves the app *and* the map library; nothing else is needed.
+
+### On a computer, without Docker
 
 ```bash
-cd Hunting
-python3 serve.py            # http://localhost:8080
+cd server
+python3 -m pip install -r requirements.txt
+python3 manage.py migrate
+python3 serve.py                 # https://<your-lan-ip>:8443, self-signed cert
 ```
 
-Open <http://localhost:8080>. `localhost` counts as a secure context, so GPS and the service
-worker work.
+Open the printed address. On the PC itself `http://localhost:8443` is not used here — `serve.py`
+speaks HTTPS so the phone gets a secure context (GPS + offline). Accept the certificate once.
+
+> `tests/static_server.py` is a **test-only** helper: it serves the app with no Django, which
+> `tests/e2e.py` uses to check the offline/service-worker behaviour. You do not need it to run the
+> app, and it is not part of the container image.
 
 ### On an iPhone / Android over your Wi-Fi
 
-iOS only gives web pages GPS (and service workers) on **https://**. The included server can
-create a self-signed certificate:
-
-```bash
-python3 serve.py --https    # prints the https://<your-lan-ip>:8080 address
-```
-
-On the phone:
-
-1. Open the printed `https://192.168.x.x:8080` address in **Safari**.
+1. Start the server as above and open the printed `https://192.168.x.x:8443` address in **Safari**.
 2. Accept the certificate warning (**Show Details → visit this website → Continue**).
-   To silence it permanently, AirDrop/email `.certs/cert.pem` to the phone, install the
+   To silence it permanently, AirDrop/email `server/.certs/cert.pem` to the phone, install the
    profile, then enable it under *Settings → General → About → Certificate Trust Settings*.
 3. Tap **Share → Add to Home Screen**. Launch HuntMap from the home screen from now on.
 4. Tap the crosshair button and allow location.
 
 The phone must be on the same Wi-Fi as the computer while the server runs.
 
-### Hosted (best for real use)
+### Docker / Portainer
 
-Upload the folder to any static HTTPS host — GitHub Pages, Netlify Drop, Cloudflare Pages,
-your own web space. There is nothing to build or configure: `index.html` is the entry point.
-Once the page has loaded once while online, the service worker keeps it available offline.
-
-> **Important:** open the app from the *same* https address every time (that is what the
-> home-screen icon does). Offline data (IndexedDB, cached tiles) belongs to that origin.
+For real use, run the container from section 2 — it is the only deployment target this repo is set
+up for (real HTTPS via your proxy or a Cloudflare Tunnel, automatic migrations, a shared map
+library, local accounts). Static hosting is not needed and is not supported by the server
+features (library, accounts, calibration sync).
 
 ---
 
@@ -95,14 +93,15 @@ python3 manage.py createsuperuser     # login for /upload/ and /admin/
 python3 serve.py                      # https://<your-lan-ip>:8443
 ```
 
-`serve.py` serves **HTTPS** with a self-signed certificate from `server/.certs` (iOS only allows
-GPS on https pages). Open the printed address on the phone, accept the certificate once, then
-*Add to Home Screen*.
+`server/serve.py` serves **HTTPS** with a self-signed certificate from `server/.certs` (iOS only
+allows GPS on https pages). Open the printed address on the phone, accept the certificate once,
+then *Add to Home Screen*.
 
 ### Put maps on the PC
 
-- **Web page** — open `https://<lan-ip>:8443/upload/`, log in, pick a PDF/TIFF/image, set the
-  PDF page. The page lists the library with size and a *georeferenced: yes/no* badge.
+- **Web page** — open `https://<lan-ip>:8443/library/` (or `/upload/` to add one), log in, pick a
+  PDF/TIFF/image and fill in name, state, county and town. The library page searches and filters by
+  place and links each map's *edit* form.
 - **Command line**, including whole folders:
 
   ```bash
@@ -191,6 +190,28 @@ python3 manage.py addmap ~/Maps/elm-ridge.pdf --name "Elm Ridge 1:24000" \
 
 Accounts live in this server's database — no external service, no email confirmation.
 
+**If sign-in fails, the app now says why** (the sheet also prints the exact URL it posts to, e.g.
+`https://huntmap.example.com/api/login/`):
+
+| Message | Meaning / fix |
+| --- | --- |
+| *No HuntMap server on this address* | The page came from a static server (or an old bookmark). Open the app from your server/tunnel URL. |
+| *This server is too old for accounts (no /api/login/)* | The container is out of date → **Pull and redeploy** (or `docker compose up -d --build`). |
+| *This server has no accounts yet* | No users exist: set `HUNTMAP_ADMIN_PASSWORD` and restart, or open `/accounts/register/`. |
+| *Wrong user name or password* | Case-insensitive and whitespace-tolerant now; the admin password is `HUNTMAP_ADMIN_PASSWORD`. Change it with `docker exec -it huntmap python manage.py changepassword admin`. |
+| *The server replied with a web page instead of JSON* | Something in front (Cloudflare **Access**, an auth proxy, a captive portal) intercepted `/api/`. Sign in there first, or bypass `/api/*` for that app. |
+| *Could not reach the server* | Wrong host/port, or the container is down. Check `curl -sk https://<host>:8443/api/me/`. |
+
+Quick CLI check of the server side (should print JSON, `"user": null` when signed out):
+
+```bash
+curl -sk https://<docker-host>:8443/api/me/; echo
+curl -sk -X POST -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"YOUR-PASSWORD"}' \
+     https://<docker-host>:8443/api/login/
+```
+
+
 - **On the PC:** `/accounts/register/` to create one, `/accounts/login/` to sign in,
   `/library/` shows *Signed in as …* and a **Sign out** button.
 - **On the phone:** open **Tools → Account** (top of the Tools sheet) → **Sign in**, or **Create
@@ -249,6 +270,21 @@ it with the stack name, e.g. `huntmap_huntmap-data`): `db.sqlite3`, uploaded map
 the TLS certificate in `certs/`. Portainer can browse, back up and restore that volume from
 *Volumes*.
 
+**What is actually inside the container.** The image is the app plus the Django project, nothing
+else — no test suites, no screenshots, no dev scripts, no git history:
+
+```
+/srv/huntmap/index.html, manifest.webmanifest, sw.js, css/, js/, vendor/, icons/
+/srv/huntmap/server/            (Django project, migrations, templates, entrypoint)
+/data/                          (volume: db.sqlite3, media/, certs/)
+```
+
+`tests/` (Playwright suites, sample maps, screenshots, `static_server.py`), `.github/`, the
+compose files, `README.md` and `.env.example` stay in the repository for development; `.dockerignore`
+keeps them out of the build context and the image. So there is only one thing to set up for
+Portainer: build the repo (or use the GHCR image) and mount the volume.
+
+
 **Changing ports.** `.env.example` lists every variable; copy it to `.env` next to
 `docker-compose.yml` (git ignores `.env`) or paste the keys into Portainer's environment editor.
 
@@ -277,8 +313,7 @@ v2 (standard in Docker Desktop, `docker compose`, and Portainer 2.x); on an olde
 `HUNTMAP_PUBLISH_PORT` explicitly as well. Outside Docker the same variables drive the dev servers:
 
 ```bash
-HUNTMAP_PORT=9443 HUNTMAP_HTTPS=1 python3 serve.py
-HUNTMAP_PORT=9443 python3 server/serve.py
+HUNTMAP_PORT=9443 HUNTMAP_HTTPS=1 python3 server/serve.py
 ```
 
 **Your own domain / existing reverse proxy** (Caddy, Nginx Proxy Manager, Traefik, Cloudflare
@@ -691,21 +726,21 @@ js/app.js                  all UI wiring
 vendor/pdfjs/              pdf.js 3.11.174 (legacy UMD build, Apache-2.0)
 vendor/utif/               UTIF 3.1.0 TIFF decoder (MIT)
 vendor/pako/               pako 2.1.0 zlib for Deflate TIFFs (MIT)
-serve.py                   local HTTP/HTTPS server for the static app
 Dockerfile                 container image: app + Django, HTTPS, healthcheck
 .env.example               every environment variable (ports, TLS, secrets) with defaults
 docker-compose.yml         Portainer/compose stack (builds from this repo)
 docker-compose.ghcr.yml    stack for the prebuilt GHCR image
 docker-compose.cloudflare.yml  stack for Cloudflare Tunnel (app + cloudflared, no TLS inside)
 .github/workflows/docker.yml  builds + publishes the image on push
-server/                    optional Django server: library, upload page, sync API
+server/                    the Django server: library, accounts, upload page, sync API
   manage.py                migrate, createsuperuser, addmap, ensureadmin, runserver
   serve.py                 HTTPS runner for the LAN (self-signed cert)
   docker-entrypoint.sh     migrate + admin + gunicorn (TLS) on container start
   healthcheck.py           container health probe
   huntmap_server/          settings + urls
-  maps/                    model, admin, API views, /upload/ page, addmap command
+  maps/                    model, admin, API views, /library/ and /upload/ pages
 tests/e2e.py               Playwright: standalone app (no server)
+tests/static_server.py     static server used only by that test (not in the image)
 tests/e2e_django.py        Playwright: PC sync + airplane mode
 tests/sample-topo-map.pdf  sample PDF map for trying the import workflow
 tests/sample-topo-map.tif  sample TIFF map (LZW compressed)
