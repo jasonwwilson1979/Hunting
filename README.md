@@ -201,6 +201,16 @@ Accounts live in this server's database — no external service, no email confir
 | *Wrong user name or password* | Case-insensitive and whitespace-tolerant now; the admin password is `HUNTMAP_ADMIN_PASSWORD`. Change it with `docker exec -it huntmap python manage.py changepassword admin`. |
 | *The server replied with a web page instead of JSON* | Something in front (Cloudflare **Access**, an auth proxy, a captive portal) intercepted `/api/`. Sign in there first, or bypass `/api/*` for that app. |
 | *Could not reach the server* | Wrong host/port, or the container is down. Check `curl -sk https://<host>:8443/api/me/`. |
+| **CSRF verification failed. Request aborted.** | TLS ended at a proxy/Cloudflare but Django thought it was http. Now handled automatically when the request comes from a local proxy (see below). If you front it with a proxy on *another* machine, set `HUNTMAP_PROXY_SSL=1`, `HUNTMAP_FORWARDED_HOST=1` and `HUNTMAP_ORIGINS=https://your.hostname`. |
+
+**Why the CSRF error happened.** The browser posts `Origin: https://hunting.wilsonnet.dev`, but if
+TLS terminates at Cloudflare/nginx and Django is reached over plain HTTP, Django computes
+`http://hunting.wilsonnet.dev` and rejects the mismatch — admin login, `/accounts/login/` and the
+upload form all fail with *"CSRF verification failed. Request aborted."* The server now trusts
+`X-Forwarded-Proto` / `X-Forwarded-Host` **when the immediate peer is loopback or a private address**
+(127.0.0.1, 172.17.0.1, 192.168.x.x — i.e. a tunnel sidecar or a proxy on the same host), so this
+works out of the box. Headers from public addresses are ignored, so the protection is unchanged for
+direct internet traffic.
 
 Quick CLI check of the server side (should print JSON, `"user": null` when signed out):
 
@@ -756,7 +766,7 @@ server/                    the Django server: library, accounts, upload page, sy
   serve.py                 HTTPS runner for the LAN (self-signed cert)
   docker-entrypoint.sh     migrate + admin + gunicorn (TLS) on container start
   healthcheck.py           container health probe
-  huntmap_server/          settings + urls
+  huntmap_server/          settings, urls, middleware (local-proxy header trust)
   maps/                    model, admin, API views, /library/ and /upload/ pages
 tests/e2e.py               Playwright: standalone app (no server)
 tests/static_server.py     static server used only by that test (not in the image)
@@ -806,12 +816,13 @@ the app opens, both maps survive with their images, GPS reports a fix and the ge
 renders from storage. A second, fresh phone downloads the map and starts with the PC's
 georeference, and a **map uploaded by one signed-in device shows up on another**.
 
-`server/maps/tests.py` (28 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (32 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
 and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
 (owner yes, stranger 403), account registration/login/logout, **the first account becoming the
-administrator**, `/api/diag/`, ownership scoping and `HUNTMAP_REQUIRE_AUTH`.
+administrator**, `/api/diag/`, **CSRF behind a TLS-terminating proxy** (trusted for local peers,
+ignored for the internet), ownership scoping and `HUNTMAP_REQUIRE_AUTH`.
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

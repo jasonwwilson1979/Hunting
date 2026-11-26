@@ -7,7 +7,7 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 
 from .models import MapDocument
 
@@ -256,7 +256,61 @@ class MapLibraryTests(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.name, "Private")
 
-    # -------------------------------------------------------------------- accounts
+    # ------------------------------------------------------- proxy / csrf headers
+    def _csrf_login(self, client, remote_addr):
+        """POST the admin login form the way a browser behind a TLS proxy would."""
+        page = client.get("/admin/login/", HTTP_X_FORWARDED_PROTO="https",
+                          HTTP_HOST="hunt.example.com", REMOTE_ADDR=remote_addr)
+        self.assertEqual(page.status_code, 200)
+        token = client.cookies["csrftoken"].value
+        return client.post(
+            "/admin/login/", {
+                "csrfmiddlewaretoken": token,
+                "username": "tester",
+                "password": "huntmap-pass",
+                "next": "/admin/",
+            },
+            HTTP_X_FORWARDED_PROTO="https",
+            HTTP_HOST="hunt.example.com",
+            HTTP_X_FORWARDED_HOST="hunt.example.com",
+            HTTP_ORIGIN="https://hunt.example.com",
+            HTTP_REFERER="https://hunt.example.com/admin/login/",
+            REMOTE_ADDR=remote_addr,
+        )
+
+    def test_tls_proxy_login_works_without_extra_settings(self):
+        """TLS at Cloudflare/nginx + Django on http used to fail CSRF.
+
+        The request arrives from the local proxy (127.0.0.1 / 172.x), so the
+        X-Forwarded-Proto/Host headers are trusted and Origin https matches.
+        """
+        client = Client(enforce_csrf_checks=True)
+        response = self._csrf_login(client, "127.0.0.1")
+        self.assertEqual(response.status_code, 302, response.content[:400])
+        self.assertEqual(response["Location"], "/admin/")
+
+    def test_forwarded_headers_from_the_internet_are_ignored(self):
+        client = Client(enforce_csrf_checks=True)
+        response = self._csrf_login(client, "8.8.8.8")
+        self.assertEqual(response.status_code, 403)          # still protected
+
+    def test_proxy_headers_set_the_absolute_origin(self):
+        doc = self._doc("Proxy map")
+        response = self.client.get("/api/maps/", HTTP_X_FORWARDED_PROTO="https",
+                                   HTTP_X_FORWARDED_HOST="hunt.example.com",
+                                   REMOTE_ADDR="172.17.0.1")
+        body = response.content.decode()
+        self.assertIn("https://hunt.example.com/api/maps/%d/file" % doc.pk, body)
+
+    def test_forwarded_headers_from_a_public_peer_are_not_trusted(self):
+        doc = self._doc("Local map")
+        response = self.client.get("/api/maps/", HTTP_X_FORWARDED_PROTO="https",
+                                   HTTP_X_FORWARDED_HOST="evil.example.com",
+                                   REMOTE_ADDR="8.8.8.8")
+        body = response.content.decode()
+        self.assertNotIn("evil.example.com", body)
+        self.assertIn("http://testserver/api/maps/%d/file" % doc.pk, body)
+
     def test_register_signs_in_and_scopes_the_library(self):
         response = self.client.post("/api/register/",
                                     json.dumps({"username": "alice", "password": "alice-pass-1"}),

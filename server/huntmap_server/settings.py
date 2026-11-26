@@ -60,6 +60,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First: a local proxy/tunnel may terminate TLS (X-Forwarded-Proto/Host), and
+    # everything below (CSRF, sessions, absolute URLs) must see the real scheme.
+    "huntmap_server.middleware.TrustLocalProxyMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
