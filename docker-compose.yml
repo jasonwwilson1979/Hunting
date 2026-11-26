@@ -16,8 +16,12 @@ services:
     container_name: huntmap
     restart: unless-stopped
     ports:
-      # host:container — the container side follows HUNTMAP_PORT
-      - "${HUNTMAP_PUBLISH_PORT:-8443}:${HUNTMAP_PORT:-8443}"
+      # host:container. Set HUNTMAP_PUBLISH_PORT for just the host side, or
+      # HUNTMAP_PORT to move both sides.
+      - "${HUNTMAP_PUBLISH_PORT:-${HUNTMAP_PORT:-8443}}:${HUNTMAP_PORT:-8443}"
+      # plain http:// on this port redirects to https://<host>:<HUNTMAP_PUBLISH_PORT>
+      # (only active while HUNTMAP_HTTPS=1; remove if you terminate TLS elsewhere)
+      - "${HUNTMAP_PUBLISH_HTTP_PORT:-8080}:${HUNTMAP_REDIRECT_PORT:-8080}"
     environment:
       # Change both of these before exposing the stack.
       HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
@@ -32,6 +36,9 @@ services:
       HUNTMAP_HTTPS: "${HUNTMAP_HTTPS:-1}"
       HUNTMAP_PORT: "${HUNTMAP_PORT:-8443}"
       HUNTMAP_BIND: "${HUNTMAP_BIND:-0.0.0.0}"
+      # http:// on HUNTMAP_PUBLISH_HTTP_PORT is redirected to this https port.
+      HUNTMAP_REDIRECT_PORT: "${HUNTMAP_REDIRECT_PORT:-8080}"
+      HUNTMAP_PUBLIC_PORT: "${HUNTMAP_PUBLISH_PORT:-${HUNTMAP_PORT:-8443}}"
       # Optional: make the self-signed cert match your address, e.g. IP:192.168.1.50
       HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
       HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"

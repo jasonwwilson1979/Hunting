@@ -22,6 +22,7 @@ PROXY_NAME="${NAME}-proxy"
 PROXY_VOLUME="${PROXY_NAME}-data"
 PROXY_PORT="${PROXY_PORT:-18444}"
 PROXY_BASE="http://127.0.0.1:${PROXY_PORT}"
+REDIRECT_PORT="${REDIRECT_PORT:-18080}"   # plain http -> https redirect listener
 PROXY_HOST="hunt.example.com"
 CUSTOM_NAME="${NAME}-ports"
 CUSTOM_VOLUME="${CUSTOM_NAME}-data"
@@ -65,10 +66,12 @@ cleanup_reset
 echo "== phase 1: HTTPS container"
 docker run -d --name "$NAME" \
   -p "127.0.0.1:${PORT}:8443" \
+  -p "127.0.0.1:${REDIRECT_PORT}:8080" \
   -e HUNTMAP_SECRET_KEY=e2e-secret-key \
   -e HUNTMAP_ADMIN_USER=admin \
   -e HUNTMAP_ADMIN_PASSWORD=e2e-password \
   -e 'HUNTMAP_HOSTS=*' \
+  -e "HUNTMAP_PUBLIC_PORT=${PORT}" \
   -v "${VOLUME}:/data" \
   "$IMAGE" >/dev/null
 check "container starts" $?
@@ -79,6 +82,13 @@ check "container reports healthy ($status)" "$([ "$status" = healthy ]; echo $?)
 check "health endpoint" "$(api -o /dev/null -w '%{http_code}' "$BASE/api/health/" | grep -qx 200; echo $?)"
 check "app shell served" "$(api "$BASE/" | grep -q '__HUNTMAP_SERVER__'; echo $?)"
 check "static asset served" "$(api -o /dev/null -w '%{http_code}' "$BASE/js/app.js" | grep -qx 200; echo $?)"
+check "plain http:// is redirected, not dropped" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${REDIRECT_PORT}/" | grep -qx 308; echo $?)"
+check "redirect points at the published https port" \
+  "$(curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:${REDIRECT_PORT}/api/health/" \
+     | grep -qx "https://127.0.0.1:${PORT}/api/health/"; echo $?)"
+check "following the redirect reaches the app" \
+  "$(curl -skL -o /dev/null -w '%{http_code}' "http://127.0.0.1:${REDIRECT_PORT}/api/health/" | grep -qx 200; echo $?)"
 check "upload page needs login" "$(api -o /dev/null -w '%{http_code}' "$BASE/upload/" | grep -qx 302; echo $?)"
 check "private files hidden" "$(api -o /dev/null -w '%{http_code}' "$BASE/README.md" | grep -qx 404; echo $?)"
 
@@ -143,11 +153,11 @@ check "healthy on container port ${CUSTOM_INNER} ($status)" "$([ "$status" = hea
 check "reachable on host port ${CUSTOM_PORT}" \
   "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:${CUSTOM_PORT}/api/health/" | grep -qx 200; echo $?)"
 check "gunicorn bound to ${CUSTOM_INNER} (not the default)" \
-  "$(docker logs "$CUSTOM_NAME" 2>&1 | grep -q "HTTPS on 0.0.0.0:${CUSTOM_INNER}"; echo $?)"
+  "$(docker logs "$CUSTOM_NAME" 2>&1 | grep -q "Listening at: https://0.0.0.0:${CUSTOM_INNER}"; echo $?)"
 
 echo
 if [ "$failures" -eq 0 ]; then
-  echo "All container checks passed (25 checks)."
+  echo "All container checks passed (28 checks)."
   [ "${KEEP:-0}" = "1" ] && echo "Containers left running: $BASE/, $PROXY_BASE/, https://127.0.0.1:${CUSTOM_PORT}/"
 else
   echo "$failures container check(s) failed."

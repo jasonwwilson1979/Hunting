@@ -11,8 +11,11 @@ services:
     container_name: huntmap
     restart: unless-stopped
     ports:
-      # host:container — the container side follows HUNTMAP_PORT
-      - "${HUNTMAP_PUBLISH_PORT:-8443}:${HUNTMAP_PORT:-8443}"
+      # host:container. Set HUNTMAP_PUBLISH_PORT for just the host side, or
+      # HUNTMAP_PORT to move both sides.
+      - "${HUNTMAP_PUBLISH_PORT:-${HUNTMAP_PORT:-8443}}:${HUNTMAP_PORT:-8443}"
+      # plain http:// on this port redirects to https://<host>:<HUNTMAP_PUBLISH_PORT>
+      - "${HUNTMAP_PUBLISH_HTTP_PORT:-8080}:${HUNTMAP_REDIRECT_PORT:-8080}"
     environment:
       HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
       HUNTMAP_ADMIN_USER: "${HUNTMAP_ADMIN_USER:-admin}"
@@ -23,6 +26,8 @@ services:
       HUNTMAP_HTTPS: "${HUNTMAP_HTTPS:-1}"
       HUNTMAP_PORT: "${HUNTMAP_PORT:-8443}"
       HUNTMAP_BIND: "${HUNTMAP_BIND:-0.0.0.0}"
+      HUNTMAP_REDIRECT_PORT: "${HUNTMAP_REDIRECT_PORT:-8080}"
+      HUNTMAP_PUBLIC_PORT: "${HUNTMAP_PUBLISH_PORT:-${HUNTMAP_PORT:-8443}}"
       HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
       HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
       HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"

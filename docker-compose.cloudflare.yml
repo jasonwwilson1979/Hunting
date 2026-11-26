@@ -38,6 +38,8 @@ services:
       # Port gunicorn binds; the tunnel's Public Hostname must use the same one.
       HUNTMAP_PORT: "${HUNTMAP_PORT:-8000}"
       HUNTMAP_BIND: "${HUNTMAP_BIND:-0.0.0.0}"
+      # Cloudflare already serves https; no plain-HTTP redirect listener needed.
+      HUNTMAP_REDIRECT_PORT: "0"
       HUNTMAP_PROXY_SSL: "1"
       HUNTMAP_FORWARDED_HOST: "1"
       # Cloudflare accepts ~100 MB request bodies (Free/Pro/Business).

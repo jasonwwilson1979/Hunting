@@ -53,7 +53,22 @@ if [ "$USE_TLS" = "1" ]; then
       -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
       -subj "/CN=huntmap.local" -addext "subjectAltName=$SAN" >/dev/null 2>&1
   fi
-  log "HuntMap HTTPS on $BIND:$PORT"
+  redirect_port="${HUNTMAP_REDIRECT_PORT:-8080}"
+  if [ "$redirect_port" != "0" ]; then
+    python redirect.py &
+    log "Plain HTTP on $BIND:$redirect_port redirects to https (so http:// works by accident)"
+  fi
+  case "$PORT" in
+    *[!0-9]*) : ;;
+    *)
+      if [ "$PORT" -lt 1024 ] && [ "$(id -u)" != "0" ]; then
+        log "NOTE: port $PORT is privileged. Docker allows it (ip_unprivileged_port_start=0);"
+        log "      on a bare host run as root or choose a port above 1024."
+      fi
+      ;;
+  esac
+  log "HuntMap ready: https://<this-host>:$PORT/   <- the https:// matters"
+  log "  http:// to port $PORT fails with \"[SSL: HTTP_REQUEST] http request\" by design"
   exec gunicorn huntmap_server.wsgi:application \
     --bind "$BIND:$PORT" \
     --workers "$WORKERS" --threads "$THREADS" --timeout "$TIMEOUT" \
