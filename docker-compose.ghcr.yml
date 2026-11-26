@@ -1,0 +1,27 @@
+# HuntMap — run the prebuilt image (GitHub Actions pushes it to GHCR).
+#
+# Portainer -> Registries -> add ghcr.io if the package is private
+# Portainer -> Stacks -> Add stack -> Repository, compose path:
+#   docker-compose.ghcr.yml
+# and set HUNTMAP_IMAGE to your image, e.g.
+#   ghcr.io/yourname/yourrepo:latest
+services:
+  huntmap:
+    image: "${HUNTMAP_IMAGE:-ghcr.io/CHANGE_ME/huntmap:latest}"
+    container_name: huntmap
+    restart: unless-stopped
+    ports:
+      - "${HUNTMAP_PUBLISH_PORT:-8443}:8443"
+    environment:
+      HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
+      HUNTMAP_ADMIN_USER: "${HUNTMAP_ADMIN_USER:-admin}"
+      HUNTMAP_ADMIN_PASSWORD: "${HUNTMAP_ADMIN_PASSWORD:-huntmap}"
+      HUNTMAP_ADMIN_EMAIL: "${HUNTMAP_ADMIN_EMAIL:-}"
+      HUNTMAP_HOSTS: "${HUNTMAP_HOSTS:-*}"
+      HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
+      HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
+    volumes:
+      - huntmap-data:/data
+
+volumes:
+  huntmap-data:

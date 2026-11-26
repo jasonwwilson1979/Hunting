@@ -1,0 +1,121 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HuntMap library</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 18px 60px; background: #0d1109; color: #ece7d8;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: #e2801f; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #a3ab96;
+       margin: 30px 0 10px; }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  .card { background: #131910; border: 1px solid rgba(233,240,220,.13); border-radius: 14px; padding: 16px; }
+  .muted { color: #a3ab96; font-size: 12.5px; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  label { display: block; margin: 0 0 10px; font-size: 12px; color: #a3ab96; }
+  input[type=text], input[type=number], input[type=file], textarea {
+    width: 100%; margin-top: 4px; padding: 10px 12px; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(233,240,220,.16); border-radius: 10px; color: #ece7d8; font-size: 15px;
+  }
+  textarea { resize: vertical; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 220px; }
+  .row .narrow { flex: 0 0 110px; }
+  button {
+    padding: 11px 18px; border-radius: 10px; border: 1px solid #e2801f; background: #e2801f;
+    color: #14180f; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.07); }
+  .msg { padding: 9px 12px; border-radius: 10px; margin: 0 0 10px; font-size: 13px; }
+  .msg.success { background: rgba(142,196,106,.12); border: 1px solid rgba(142,196,106,.4); }
+  .msg.error { background: rgba(226,81,63,.12); border: 1px solid rgba(226,81,63,.45); }
+  .errlist { margin: 4px 0 0; padding-left: 18px; color: #ffb9ae; font-size: 12.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid rgba(233,240,220,.1); vertical-align: top; }
+  th { color: #a3ab96; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .pill { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 10.5px;
+          border: 1px solid rgba(233,240,220,.22); color: #a3ab96; }
+  .pill.ok { border-color: rgba(142,196,106,.5); color: #b9dc9c; }
+  .pill.warn { border-color: rgba(226,128,31,.5); color: #f0b475; }
+  code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 5px; }
+  .hint { border-left: 3px solid #e2801f; padding: 8px 12px; background: rgba(255,255,255,.04);
+          border-radius: 0 10px 10px 0; font-size: 12.5px; color: #a3ab96; margin: 14px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>HuntMap library</h1>
+  <p class="muted">Maps stored on this PC. Open <span class="mono">{{ request.scheme }}://{{ request.get_host }}/</span>
+    on your phone, then <b>Maps → From your PC → Download</b>.</p>
+
+  {% for message in messages %}
+    <div class="msg {{ message.tags }}">{{ message }}</div>
+  {% endfor %}
+
+  <h2>Add a map</h2>
+  <div class="card">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="msg error">{{ form.non_field_errors }}</div>
+      {% endif %}
+      <div class="row">
+        <label>Name (optional)
+          {{ form.name }}
+        </label>
+        <label class="narrow">PDF page
+          {{ form.page }}
+        </label>
+      </div>
+      <label>File — PDF, TIFF, PNG or JPEG
+        {{ form.file }}
+      </label>
+      {% if form.file.errors %}<ul class="errlist">{{ form.file.errors }}</ul>{% endif %}
+      <label>Notes (optional)
+        {{ form.notes }}
+      </label>
+      <button type="submit">Add to library</button>
+    </form>
+    <div class="hint">Bulk import from a folder:
+      <span class="mono">python3 manage.py addmap ~/Maps/*.pdf</span><br>
+      Your phone works offline with everything it has downloaded, and GPS keeps working in
+      airplane mode — so download the maps you need while on Wi-Fi.</div>
+  </div>
+
+  <h2>{{ maps|length }} map{{ maps|length|pluralize }} &middot; {{ total_mb }} MB</h2>
+  <div class="card">
+    {% if maps %}
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Georeferenced</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+      {% for m in maps %}
+        <tr>
+          <td><b>{{ m.name }}</b>{% if m.notes %}<div class="muted">{{ m.notes|truncatechars:80 }}</div>{% endif %}</td>
+          <td>{{ m.get_kind_display }}{% if m.kind == 'pdf' and m.page > 1 %} <span class="pill">p{{ m.page }}</span>{% endif %}</td>
+          <td class="mono">{{ m.size_mb }} MB</td>
+          <td>{% if m.calib %}<span class="pill ok">yes</span>{% else %}<span class="pill warn">no</span>{% endif %}</td>
+          <td class="muted">{{ m.updated_at|date:"Y-m-d H:i" }}</td>
+          <td><a href="{% url 'admin:maps_mapdocument_change' m.pk %}">edit</a>
+              &middot; <a href="{% url 'map-file' m.pk %}">file</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="muted">No maps yet. Add a PDF or TIFF above, or use the <span class="mono">addmap</span> command.</p>
+    {% endif %}
+  </div>
+
+  <p class="muted" style="margin-top:22px">
+    <a href="/">Open the map app</a> &middot; <a href="/admin/">Django admin</a>
+  </p>
+</div>
+</body>
+</html>

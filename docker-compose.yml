@@ -1,0 +1,39 @@
+# HuntMap — stack for Portainer (Git repository) and plain docker compose.
+#
+# Portainer -> Stacks -> Add stack -> Repository
+#   Repository URL : https://github.com/<you>/<repo>
+#   Compose path   : docker-compose.yml
+#   Environment    : set HUNTMAP_SECRET_KEY and HUNTMAP_ADMIN_PASSWORD
+#
+# Command line:  docker compose up -d --build
+# Then open https://<docker-host>:8443/ on the phone and accept the certificate.
+services:
+  huntmap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: huntmap:latest
+    container_name: huntmap
+    restart: unless-stopped
+    ports:
+      # host:container — change the left side if 8443 is taken
+      - "${HUNTMAP_PUBLISH_PORT:-8443}:8443"
+    environment:
+      # Change both of these before exposing the stack.
+      HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
+      HUNTMAP_ADMIN_USER: "${HUNTMAP_ADMIN_USER:-admin}"
+      HUNTMAP_ADMIN_PASSWORD: "${HUNTMAP_ADMIN_PASSWORD:-huntmap}"
+      HUNTMAP_ADMIN_EMAIL: "${HUNTMAP_ADMIN_EMAIL:-}"
+      # Hosts allowed to reach the app ("*" is fine on a private LAN).
+      HUNTMAP_HOSTS: "${HUNTMAP_HOSTS:-*}"
+      HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
+      # Optional: make the self-signed cert match your address, e.g. IP:192.168.1.50
+      HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
+      HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
+      HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
+    volumes:
+      # database, uploaded maps and the TLS certificate live here
+      - huntmap-data:/data
+
+volumes:
+  huntmap-data:

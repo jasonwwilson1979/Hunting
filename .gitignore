@@ -1,0 +1,18 @@
+# local HTTPS certificates created by serve.py --https
+.certs/
+
+# test artefacts (the README screenshots are kept)
+tests/screenshots/*
+!tests/screenshots/01-map.png
+!tests/screenshots/03-pdf-overlay.png
+!tests/screenshots/05-tiff-rotated.png
+!tests/screenshots/06-align-sliders.png
+!tests/screenshots/07-sync-from-pc.png
+!tests/screenshots/08-airplane-mode.png
+__pycache__/
+*.pyc
+
+# OS noise
+.DS_Store
+Thumbs.db
+Archive.zip

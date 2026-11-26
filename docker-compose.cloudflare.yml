@@ -1,0 +1,60 @@
+# HuntMap behind a Cloudflare Tunnel (cloudflared sidecar).
+#
+# Cloudflare terminates TLS, so the container speaks plain HTTP on 8000 and the
+# tunnel connects to it over the internal Docker network (no ports published).
+#
+# Portainer -> Stacks -> Add stack -> Repository, compose path:
+#   docker-compose.cloudflare.yml
+# Environment:
+#   CLOUDFLARE_TUNNEL_TOKEN  token from Zero Trust -> Networks -> Tunnels
+#   HUNTMAP_SECRET_KEY       long random string
+#   HUNTMAP_ADMIN_PASSWORD   login for /upload/ and /admin/
+#   HUNTMAP_HOSTS            e.g. huntmap.example.com
+#   HUNTMAP_ORIGINS          e.g. https://huntmap.example.com
+#
+# In Cloudflare, the tunnel's Public Hostname must point at:
+#   service: http://huntmap:8000
+#
+# Prefer the prebuilt image? Replace the huntmap `build:` block with:
+#   image: ghcr.io/<owner>/<repo>:latest
+services:
+  huntmap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: huntmap:latest
+    container_name: huntmap
+    restart: unless-stopped
+    environment:
+      HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
+      HUNTMAP_ADMIN_USER: "${HUNTMAP_ADMIN_USER:-admin}"
+      HUNTMAP_ADMIN_PASSWORD: "${HUNTMAP_ADMIN_PASSWORD:-huntmap}"
+      HUNTMAP_ADMIN_EMAIL: "${HUNTMAP_ADMIN_EMAIL:-}"
+      HUNTMAP_HOSTS: "${HUNTMAP_HOSTS:-*}"
+      HUNTMAP_ORIGINS: "${HUNTMAP_ORIGINS:-}"
+      HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
+      # --- TLS ends at Cloudflare ---
+      HUNTMAP_HTTPS: "0"
+      HUNTMAP_PORT: "8000"
+      HUNTMAP_PROXY_SSL: "1"
+      HUNTMAP_FORWARDED_HOST: "1"
+      # Cloudflare accepts ~100 MB request bodies (Free/Pro/Business).
+      HUNTMAP_MAX_UPLOAD: "${HUNTMAP_MAX_UPLOAD:-95000000}"
+      HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
+      HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
+    volumes:
+      - huntmap-data:/data
+    # No published ports: only the tunnel reaches it.
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: huntmap-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+    depends_on:
+      - huntmap
+
+volumes:
+  huntmap-data:

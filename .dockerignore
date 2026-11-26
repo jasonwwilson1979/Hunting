@@ -1,0 +1,25 @@
+# Build context for the HuntMap image
+.git
+.github
+.gitignore
+*.md
+!README.md
+tests
+dist
+Archive.zip
+
+# local data that must not go into the image
+server/db.sqlite3
+server/db.sqlite3-journal
+server/media
+server/.certs
+.certs
+
+# python noise
+**/__pycache__
+*.py[cod]
+.venv
+venv
+
+# dev extras
+serve.py

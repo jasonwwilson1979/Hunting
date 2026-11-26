@@ -1,0 +1,19 @@
+{
+  "name": "HuntMap \u2014 Offline GPS Hunting Map",
+  "short_name": "HuntMap",
+  "description": "GPS position, tracks, waypoints and sun/moon times with PDF or paper map overlays and OpenStreetMap base maps. Works offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0d1109",
+  "theme_color": "#12160f",
+  "lang": "en",
+  "categories": ["navigation", "sports", "utilities", "travel"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
