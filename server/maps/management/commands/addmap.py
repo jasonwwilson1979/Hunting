@@ -28,6 +28,9 @@ class Command(BaseCommand):
         parser.add_argument("--name", help="Name to show on the phone (single file only)")
         parser.add_argument("--page", type=int, default=1, help="PDF page to use (default 1)")
         parser.add_argument("--notes", default="", help="Notes for the map")
+        parser.add_argument("--state", default="", help="State / province, e.g. Vermont")
+        parser.add_argument("--county", default="", help="County, e.g. Rutland")
+        parser.add_argument("--city", default="", help="Town / city, e.g. Killington")
         parser.add_argument("--force", action="store_true",
                             help="Import even if an identical file is already stored")
 
@@ -59,7 +62,11 @@ class Command(BaseCommand):
                     continue
 
             name = (options["name"] or path.stem)[:190]
-            doc = MapDocument(name=name, page=max(1, options["page"]), notes=options["notes"])
+            place = {field: " ".join((options.get(field) or "").split()[:6]).title()
+                     for field in ("state", "county", "city")}
+            doc = MapDocument(name=name, page=max(1, options["page"]), notes=options["notes"],
+                              state=place["state"][:90], county=place["county"][:90],
+                              city=place["city"][:90])
             with path.open("rb") as handle:
                 doc.file.save(path.name, File(handle), save=False)
             doc.rehash()

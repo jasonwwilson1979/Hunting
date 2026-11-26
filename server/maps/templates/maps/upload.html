@@ -53,7 +53,8 @@
 <div class="wrap">
   <h1>HuntMap library</h1>
   <p class="muted">Maps stored on this PC. Open <span class="mono">{{ request.scheme }}://{{ request.get_host }}/</span>
-    on your phone, then <b>Maps → From your PC → Download</b>.</p>
+    on your phone, then <b>Maps → From your PC → Download</b>.
+    <a href="{% url 'library' %}">Search &amp; edit the library</a>.</p>
 
   {% for message in messages %}
     <div class="msg {{ message.tags }}">{{ message }}</div>
@@ -78,6 +79,17 @@
         {{ form.file }}
       </label>
       {% if form.file.errors %}<ul class="errlist">{{ form.file.errors }}</ul>{% endif %}
+      <div class="row">
+        <label>State / province
+          {{ form.state }}
+        </label>
+        <label>County
+          {{ form.county }}
+        </label>
+        <label>Town / city
+          {{ form.city }}
+        </label>
+      </div>
       <label>Notes (optional)
         {{ form.notes }}
       </label>

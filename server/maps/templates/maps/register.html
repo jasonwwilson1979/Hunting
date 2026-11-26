@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create account — HuntMap</title>
+{% include "maps/_style.html" %}
+</head>
+<body>
+<div class="wrap" style="max-width:420px">
+  <h1>Create account</h1>
+  <p class="muted">A local account on this HuntMap server: it keeps your maps separate and lets you
+    sign in from any device on your network.</p>
+
+  {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <label>User name {{ form.username }}</label>
+      {% if form.username.errors %}<ul class="errlist">{{ form.username.errors }}</ul>{% endif %}
+      <label>Password {{ form.password1 }}</label>
+      {% if form.password1.errors %}<ul class="errlist">{{ form.password1.errors }}</ul>{% endif %}
+      <label>Password again {{ form.password2 }}</label>
+      {% if form.password2.errors %}<ul class="errlist">{{ form.password2.errors }}</ul>{% endif %}
+      <button type="submit">Create account</button>
+    </form>
+    <div class="hint">{{ form.password1.help_text|safe }}</div>
+  </div>
+  <p class="muted"><a href="{% url 'login' %}">Already have an account? Sign in</a></p>
+</div>
+</body>
+</html>

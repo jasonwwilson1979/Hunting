@@ -157,12 +157,52 @@ draw and the GPS dot moves (the first fix can take 30–120 s without network as
 | `HUNTMAP_PROXY_SSL=1` | trust `X-Forwarded-Proto` behind nginx/caddy |
 | `HUNTMAP_ORIGINS` | extra CSRF trusted origins |
 
-API: `GET /api/maps/` (library), `POST /api/maps/` (multipart `file`, `name`, `page`),
-`GET /api/maps/<id>/file`, `PUT /api/maps/<id>/calibration`.
+API: `GET /api/maps/` (library; add `?q=`, `?state=`, `?county=`), `POST /api/maps/` (multipart
+`file`, `name`, `page`, `state`, `county`, `city`), `GET /api/maps/<id>/`, `PATCH /api/maps/<id>/`
+(rename / fix the place), `GET /api/maps/<id>/file`, `PUT /api/maps/<id>/calibration`, plus
+`GET /api/me/`, `POST /api/login/`, `POST /api/logout/`, `POST /api/register/`.
 
 The app is served from the same origin, so there is no CORS. Read endpoints are open to your
 LAN — fine at home, not for the public internet; set `HUNTMAP_TOKEN` if you want writes
-protected. Uploaded files stay in `server/media/`, outside the web app folder.
+protected, or turn on accounts (below). Uploaded files stay in `server/media/`, outside the web
+app folder.
+
+### Library page: search, places, edit
+
+`/library/` is the PC-side browser for the map library (the phone uses *Maps → From your PC*):
+
+- **Search** matches the name, notes, state, county and city.
+- **Filter** by state and county from menus built from what is actually in the library; the county
+  menu narrows to the chosen state.
+- Each row links to the file (**open** in the browser), shows type, size, whether it is
+  georeferenced, and who owns it.
+- **edit** (owner or staff) changes the name, PDF page, notes and **state / county / town-city**
+  without touching the file. Place names are capitalised automatically so `rutland` and `Rutland`
+  are the same filter.
+
+`/upload/` (staff) adds a map and takes the same place fields, and so does the CLI:
+
+```bash
+python3 manage.py addmap ~/Maps/elm-ridge.pdf --name "Elm Ridge 1:24000" \
+    --state Vermont --county Rutland --city Killington
+```
+
+### Local accounts (sign up / sign in)
+
+Accounts live in this server's database — no external service, no email confirmation.
+
+- **On the PC:** `/accounts/register/` to create one, `/accounts/login/` to sign in,
+  `/library/` shows *Signed in as …* and a **Sign out** button.
+- **On the phone:** *Maps → From your PC →* **Sign in** (same sheet has **Create account**). The
+  session cookie is stored by the browser, so the panel keeps showing your maps.
+- **Ownership:** a map uploaded while signed in belongs to that account; the API only lists your
+  own maps plus **shared** ones (uploaded by the admin or via `addmap`, i.e. no owner). Downloading
+  someone else's file returns 404, and editing it returns 403.
+- **Locking it down:** `HUNTMAP_REQUIRE_AUTH=1` makes the library invisible to anonymous visitors
+  (the app's PC panel then says *Sign in to see your maps*). Leave it `0` for a trusted home LAN
+  where you just want everything visible.
+- The **admin** account created from `HUNTMAP_ADMIN_PASSWORD` is a superuser: it sees and edits
+  everything, including other people's maps.
 
 ### Deploy with Docker / Portainer
 
@@ -200,6 +240,7 @@ once on each device, then *Add to Home Screen*.
 | `HUNTMAP_PROXY_SSL` / `HUNTMAP_FORWARDED_HOST` | off | Set to `1` behind Caddy/NPM/Traefik/Cloudflare. |
 | `HUNTMAP_MAX_UPLOAD` | `314572800` (300 MB) | Largest accepted map file; Cloudflare allows 100 MB. |
 | `HUNTMAP_TOKEN` | empty | If set, uploads and calibration writes need `X-HuntMap-Token`. |
+| `HUNTMAP_REQUIRE_AUTH` | `0` | `1` = only signed-in accounts see the library (own + shared maps). |
 | `HUNTMAP_WORKERS` / `HUNTMAP_THREADS` | `1` / `8` | One worker keeps SQLite happy; threads handle concurrency. |
 
 Data lives in the named volume **`huntmap-data`** (`/data` inside the container; Portainer prefixes
@@ -421,6 +462,11 @@ the type chips and in the spot list: **treestand**, **ground blind**, **building
 **deer**, **bear**, **turkey**, **trail camera**, **water**, **food plot**, **sign / scrape**,
 **track / rub**, **kill site**, **camp**, **vehicle**, **hazard**, **waypoint**. The icon is what
 you see at a glance on the map; the label is in the list and in the pin tooltip.
+
+**Going to a spot.** Open **Spots** and tap a row: the map jumps to that spot (zooming in if you
+were far out), the pin is highlighted and the list closes — the toast tells you how far it is and
+that the pin opens the editor. The **Edit** button at the end of each row opens the full sheet
+(type, notes, go-to, share, delete) instead of moving the map.
 
 Other gestures:
 
@@ -676,7 +722,7 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (82 checks): load without errors, GPS fix (two-phase: a quick network/Wi-Fi request
+`tests/e2e.py` (84 checks): load without errors, GPS fix (two-phase: a quick network/Wi-Fi request
 then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button
 switching the watch to network mode), HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
@@ -686,19 +732,25 @@ sun/moon panel, the built-in self-test, PDF open/rasterise, adding
 a PDF through the real UI (file picker → rasterise → tap two control points → apply), north-up
 georeferencing, overlay pixels on the canvas, **crosshair placement** (mode, canvas drawing,
 HUD readout, panning moves the target, Drop button and tap both place a waypoint away from the GPS
-dot), track recording while moving, GPX round-trip, reload persistence, service worker, a full
-**offline reload**, a **TIFF** map loaded through the UI, rotated 90°, georeferenced with a 5° fine
-rotation, and the align-bar sliders.
+dot), **tapping a spot row** (map centres on it, list closes, pin selected), track recording while
+moving, GPX round-trip, reload persistence, service worker, a full **offline reload**, a **TIFF**
+map loaded through the UI, rotated 90°, georeferenced with a 5° fine rotation, and the align-bar
+sliders.
 
-`tests/e2e_django.py` (13 checks): Django serves the app, the PC library is listed, PDF + TIFF
-downloaded and stored, the phone's georeference is uploaded to the PC, then with the network
-**off**: the app opens, both maps survive with their images, GPS reports a fix and the
-georeferenced map renders from storage. A second, fresh phone downloads the map and starts with
-the PC's georeference.
+`tests/e2e_django.py` (24 checks): Django serves the app, the PC library is listed with its place,
+**search / state filters**, **editing a map's details on the server**, **creating a local account**
+(panel shows *Signed in as …*, shared maps stay visible, sign-out clears it), the `/library/` page
+and its state filter, PDF + TIFF downloaded and stored, the phone's georeference uploaded to the
+PC, then with the network **off**: the app opens, both maps survive with their images, GPS reports
+a fix and the georeferenced map renders from storage. A second, fresh phone downloads the map and
+starts with the PC's georeference.
 
-`server/maps/tests.py` (15 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (24 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
-calibration validation, token protection, login requirement, the upload form, `addmap` idempotency.
+calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
+and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
+(owner yes, stranger 403), account registration/login/logout, ownership scoping and
+`HUNTMAP_REQUIRE_AUTH`.
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

@@ -166,7 +166,7 @@ class MapLibraryTests(TestCase):
     def test_upload_page_needs_login(self):
         response = self.client.get("/upload/")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/admin/login/", response["Location"])
+        self.assertIn("/accounts/login/", response["Location"])
 
         self.client.force_login(self.staff)
         self.assertEqual(self.client.get("/upload/").status_code, 200)
@@ -187,4 +187,143 @@ class MapLibraryTests(TestCase):
 
         call_command("addmap", str(SAMPLE), "--name", "CLI map again", verbosity=0)
         self.assertEqual(MapDocument.objects.count(), 1)   # identical bytes are skipped
+
+    def test_addmap_takes_a_place(self):
+        call_command("addmap", str(SAMPLE), "--name", "Placed", "--state", "vermont",
+                     "--county", "rutland", "--city", "killington", verbosity=0)
+        doc = MapDocument.objects.get(name="Placed")
+        self.assertEqual(doc.state, "Vermont")
+        self.assertEqual(doc.county, "Rutland")
+        self.assertEqual(doc.city, "Killington")
+        self.assertEqual(doc.place, "Vermont \u00b7 Rutland \u00b7 Killington")
+
+    # ----------------------------------------------------------------- place + edit
+    def _doc(self, name, state="", county="", city="", owner=None):
+        doc = MapDocument.objects.create(name=name, page=1, state=state,
+                                         county=county, city=city, owner=owner)
+        doc.file.save(name.replace(" ", "-") + ".pdf",
+                      SimpleUploadedFile(name + ".pdf", SAMPLE.read_bytes()), save=False)
+        doc.rehash()
+        doc.save()
+        return doc
+
+    def test_library_filters_by_place_and_search(self):
+        self._doc("Elm Ridge", "Vermont", "Rutland", "Killington")
+        self._doc("Bear Swamp", "Vermont", "Windsor", "Stockbridge")
+        self._doc("North Maine", "Maine", "Franklin", "Rangeley")
+
+        def names(**params):
+            payload = self.client.get("/api/maps/", params).json()
+            return sorted(m["name"] for m in payload["maps"])
+
+        self.assertEqual(len(names()), 3)
+        self.assertEqual(names(state="Vermont"), ["Bear Swamp", "Elm Ridge"])
+        self.assertEqual(names(state="vermont", county="Rutland"), ["Elm Ridge"])
+        self.assertEqual(names(city="Rangeley"), ["North Maine"])
+        self.assertEqual(names(q="elm"), ["Elm Ridge"])
+        self.assertEqual(names(q="stockbridge"), ["Bear Swamp"])
+        self.assertEqual(names(q="zzz"), [])
+
+        payload = self.client.get("/api/maps/").json()
+        self.assertIn("Vermont", payload["places"]["states"])
+        self.assertEqual(payload["places"]["counties_by_state"]["Vermont"],
+                         ["Rutland", "Windsor"])
+
+    def test_map_metadata_can_be_edited_by_the_owner(self):
+        user = get_user_model().objects.create_user("bob", password="bob-pass-123")
+        doc = self._doc("Old name", owner=user)
+        self.client.force_login(user)
+        body = json.dumps({"name": "New name", "state": "vermont", "county": "rutland",
+                           "city": "killington", "notes": "clearcut edge", "page": 3})
+        response = self.client.patch("/api/maps/%d/" % doc.pk, body,
+                                     content_type="application/json")
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["name"], "New name")
+        self.assertEqual(payload["state"], "Vermont")        # capitalised
+        self.assertEqual(payload["city"], "Killington")
+        self.assertEqual(payload["page"], 3)
+        self.assertEqual(payload["notes"], "clearcut edge")
+
+    def test_metadata_edit_is_refused_for_other_accounts(self):
+        owner = get_user_model().objects.create_user("owner", password="owner-pass-1")
+        other = get_user_model().objects.create_user("other", password="other-pass-1")
+        doc = self._doc("Private", owner=owner)
+        self.client.force_login(other)
+        response = self.client.patch("/api/maps/%d/" % doc.pk, json.dumps({"name": "hax"}),
+                                     content_type="application/json")
+        self.assertEqual(response.status_code, 403)
+        doc.refresh_from_db()
+        self.assertEqual(doc.name, "Private")
+
+    # -------------------------------------------------------------------- accounts
+    def test_register_signs_in_and_scopes_the_library(self):
+        response = self.client.post("/api/register/",
+                                    json.dumps({"username": "alice", "password": "alice-pass-1"}),
+                                    content_type="application/json")
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["user"], "alice")
+
+        upload = SimpleUploadedFile("mine.pdf", SAMPLE.read_bytes(), content_type="application/pdf")
+        self.assertEqual(self.client.post("/api/maps/", {"file": upload, "name": "Mine"}).status_code, 201)
+        self.assertEqual(MapDocument.objects.get(name="Mine").owner.username, "alice")
+
+        # another account cannot see it; a map with no owner is shared
+        bob = get_user_model().objects.create_user("bob", password="bob-pass-123")
+        self._doc("Bobs map", owner=bob)
+        self._doc("Shared map")
+        names = sorted(m["name"] for m in self.client.get("/api/maps/").json()["maps"])
+        self.assertEqual(names, ["Mine", "Shared map"])
+
+    def test_login_logout_and_me(self):
+        get_user_model().objects.create_user("carol", password="carol-pass-1")
+        self.assertIsNone(self.client.get("/api/me/").json()["user"])
+
+        bad = self.client.post("/api/login/", json.dumps({"username": "carol", "password": "nope"}),
+                               content_type="application/json")
+        self.assertEqual(bad.status_code, 401)
+
+        ok = self.client.post("/api/login/", json.dumps({"username": "carol", "password": "carol-pass-1"}),
+                              content_type="application/json")
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(self.client.get("/api/me/").json()["user"], "carol")
+
+        self.assertEqual(self.client.post("/api/logout/").status_code, 200)
+        self.assertIsNone(self.client.get("/api/me/").json()["user"])
+
+    @override_settings(HUNTMAP_REQUIRE_AUTH=True)
+    def test_require_auth_hides_the_library(self):
+        doc = self._doc("Hidden")
+        self.assertEqual(self.client.get("/api/maps/").json()["maps"], [])
+        self.assertEqual(self.client.get("/api/maps/%d/file" % doc.pk).status_code, 404)
+
+        user = get_user_model().objects.create_user("dave", password="dave-pass-1")
+        self.client.force_login(user)
+        names = [m["name"] for m in self.client.get("/api/maps/").json()["maps"]]
+        self.assertEqual(names, ["Hidden"])     # shared map (no owner) is visible when signed in
+
+    def test_library_page_renders_and_filters(self):
+        self._doc("Elm Ridge", "Vermont", "Rutland", "Killington")
+        self._doc("North Maine", "Maine", "Franklin", "Rangeley")
+        page = self.client.get("/library/")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Elm Ridge")
+        self.assertContains(page, "North Maine")
+        filtered = self.client.get("/library/", {"state": "Maine"})
+        self.assertContains(filtered, "North Maine")
+        self.assertNotContains(filtered, "Elm Ridge")
+
+    def test_map_edit_page_updates_fields(self):
+        self.client.force_login(self.staff)
+        doc = self._doc("Rename me")
+        self.assertEqual(self.client.get("/library/%d/edit/" % doc.pk).status_code, 200)
+        response = self.client.post("/library/%d/edit/" % doc.pk, {
+            "name": "Renamed", "page": 1, "state": "maine", "county": "franklin",
+            "city": "rangeley", "notes": "north side",
+        })
+        self.assertEqual(response.status_code, 302)
+        doc.refresh_from_db()
+        self.assertEqual(doc.name, "Renamed")
+        self.assertEqual(doc.state, "Maine")
+        self.assertEqual(doc.place, "Maine \u00b7 Franklin \u00b7 Rangeley")
 

@@ -154,6 +154,50 @@
 </nav>
 
 <div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheetMapMeta" aria-hidden="true">
+  <header class="sheet-head">
+    <h2>Map details</h2>
+    <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="sheet-body">
+    <p class="muted small" id="metaSub">&mdash;</p>
+    <label class="field"><span>Name</span><input type="text" id="metaName" autocomplete="off"></label>
+    <div class="row gap">
+      <label class="field grow"><span>State</span><input type="text" id="metaState" autocomplete="off" placeholder="Vermont"></label>
+      <label class="field grow"><span>County</span><input type="text" id="metaCounty" autocomplete="off" placeholder="Rutland"></label>
+    </div>
+    <div class="row gap">
+      <label class="field grow"><span>Town / city</span><input type="text" id="metaCity" autocomplete="off" placeholder="Killington"></label>
+      <label class="field narrow-field"><span>PDF page</span><input type="number" id="metaPage" min="1"></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea id="metaNotes" rows="2"></textarea></label>
+    <div class="row gap">
+      <button class="btn primary grow" id="btnMetaSave" type="button"><svg class="i"><use href="#i-check"/></svg> Save</button>
+      <button class="btn" id="btnMetaCancel" type="button" data-close>Cancel</button>
+    </div>
+    <p class="note small">This edits the library entry on your PC; the map file is not touched.
+      Capitalisation is fixed automatically so the state/county filters stay tidy.</p>
+  </div>
+</section>
+
+<section class="sheet" id="sheetSignIn" aria-hidden="true">
+  <header class="sheet-head">
+    <h2>Sign in</h2>
+    <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="sheet-body">
+    <p class="muted small">Local accounts on your own HuntMap server. Nothing is sent anywhere else.</p>
+    <label class="field"><span>User name</span><input type="text" id="signUser" autocomplete="username" autocapitalize="none"></label>
+    <label class="field"><span>Password</span><input type="password" id="signPass" autocomplete="current-password"></label>
+    <div class="row gap wrap">
+      <button class="btn primary grow" id="btnSignInGo" type="button">Sign in</button>
+      <button class="btn" id="btnSignUpGo" type="button">Create account</button>
+    </div>
+    <p class="note small" id="signNote">A new account needs a password of at least 8 characters. The
+      library keeps your maps separate; maps without an owner stay shared.</p>
+  </div>
+</section>
+
 <section class="sheet" id="sheetMark" aria-hidden="true">
   <header class="sheet-head">
     <h2>New spot</h2>
@@ -234,6 +278,16 @@
 
     <div id="syncSection" hidden>
       <h3 class="group-title">From your PC <span class="count" id="syncCount"></span></h3>
+      <div class="row gap wrap sync-account">
+        <span class="muted small grow" id="syncUser">Not signed in</span>
+        <button class="btn" id="btnSyncSignIn" type="button">Sign in</button>
+        <button class="btn" id="btnSyncSignOut" type="button" hidden>Sign out</button>
+      </div>
+      <div class="filters">
+        <input type="search" id="syncSearch" placeholder="Search maps, place…" autocomplete="off">
+        <select id="syncState" aria-label="Filter by state"><option value="">Any state</option></select>
+        <select id="syncCounty" aria-label="Filter by county"><option value="">Any county</option></select>
+      </div>
       <div class="row gap wrap">
         <button class="btn" id="btnSyncRefresh" type="button"><svg class="i"><use href="#i-refresh"/></svg> Refresh</button>
         <button class="btn" id="btnSyncAll" type="button"><svg class="i"><use href="#i-cloud"/></svg> Download all</button>
@@ -242,7 +296,7 @@
       <div class="list" id="syncList"></div>
       <p class="note small">Maps are copied onto this phone, so they keep working with no signal —
         that is what keeps GPS useful in airplane mode. Add or replace maps on the PC at
-        <span class="mono">/upload/</span> (or with <span class="mono">manage.py addmap</span>), then
+        <span class="mono">/library/</span> (or with <span class="mono">manage.py addmap</span>), then
         press Refresh here. Georeferencing done once is shared back to the server.</p>
     </div>
 

@@ -31,6 +31,8 @@ services:
       # Hosts allowed to reach the app ("*" is fine on a private LAN).
       HUNTMAP_HOSTS: "${HUNTMAP_HOSTS:-*}"
       HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
+      # 1 = the library is only visible to signed-in local accounts.
+      HUNTMAP_REQUIRE_AUTH: "${HUNTMAP_REQUIRE_AUTH:-0}"
       # Networking: 1 = HTTPS (default, needed for phone GPS), 0 = plain HTTP
       # behind your own TLS proxy. Keep HUNTMAP_PORT in step with the port mapping.
       HUNTMAP_HTTPS: "${HUNTMAP_HTTPS:-1}"

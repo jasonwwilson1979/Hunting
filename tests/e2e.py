@@ -502,6 +502,32 @@ def main():
             })()""")
             check("slider adjustments are saved", abs(saved["deg"] - 12) < 0.01 and saved["op"] > 0.8, saved)
 
+            # ---------------- tapping a spot moves the map ----------------
+            page.evaluate("""async () => {
+                const D = window.Hunt.Data;
+                const w = D.newWaypoint({ name: 'Far Ridge', type: 'deer', lat: 44.2, lon: -71.4 });
+                await D.saveWaypoint(w);
+                window.Hunt.App.map.setWaypoints(D.waypoints);
+            }""")
+            page.click("#btnWaypoints")
+            page.wait_for_timeout(500)
+            page.click('#wpList .item-hit:has-text("Far Ridge")')
+            page.wait_for_timeout(700)
+            jumped = page.evaluate("""(() => {
+                const m = window.Hunt.App.map;
+                const c = m.getCenterLatLon();
+                const w = window.Hunt.Data.waypoints.filter(function (x) { return x.name === 'Far Ridge'; })[0];
+                return { lat: c.lat, lon: c.lon, wlat: w.lat, wlon: w.lon,
+                         selected: m.selectedId === w.id,
+                         sheetClosed: document.getElementById('sheetWaypoints').getAttribute('aria-hidden') === 'true',
+                         zoom: m.zoom };
+            })()""")
+            check("tapping a spot centres the map on it",
+                  abs(jumped["lat"] - jumped["wlat"]) < 1e-5 and abs(jumped["lon"] - jumped["wlon"]) < 1e-5,
+                  jumped)
+            check("spot tap closes the list, selects the pin and zooms in",
+                  jumped["sheetClosed"] is True and jumped["selected"] is True and jumped["zoom"] >= 15, jumped)
+
             # ---------------- crosshair placement ----------------
             page.click("#btnPin")
             page.wait_for_timeout(400)

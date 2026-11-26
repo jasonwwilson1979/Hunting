@@ -43,6 +43,9 @@ for _local_host in ("127.0.0.1", "localhost"):
     if _local_host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_local_host)
 HUNTMAP_TOKEN = env("HUNTMAP_TOKEN", "")
+# 1 = only signed-in accounts see the library (each user sees their own maps plus
+# shared ones); 0 = the LAN / single-user behaviour (everything visible).
+HUNTMAP_REQUIRE_AUTH = env("HUNTMAP_REQUIRE_AUTH", "0") == "1"
 HUNTMAP_APP_DIR = str(APP_DIR)
 HUNTMAP_MAX_UPLOAD = int(env("HUNTMAP_MAX_UPLOAD", str(300 * 1024 * 1024)))
 
@@ -108,7 +111,9 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = Path(env("HUNTMAP_MEDIA", str(BASE_DIR / "media")))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-LOGIN_URL = "/admin/login/"
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/library/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # Big scanned maps: the request body can be large, files stream to disk.

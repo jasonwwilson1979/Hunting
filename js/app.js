@@ -44,6 +44,10 @@
     'btnTrackExport', 'btnTrackToggle', 'trackList', 'sheetLayers', 'providerList',
     'toggleTiles', 'overlayList', 'btnAddMap', 'btnRecalibrate', 'dlZoomMin', 'dlZoomMax',
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
+    'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnSyncSignIn', 'btnSyncSignOut',
+    'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
+    'metaNotes', 'btnMetaSave', 'btnMetaCancel',
+    'sheetSignIn', 'signUser', 'signPass', 'btnSignInGo', 'btnSignUpGo', 'signNote',
     'btnDlEstimate', 'dlEstimate', 'btnDlStart', 'btnDlCancel', 'dlProgressWrap', 'dlBar',
     'dlStatus', 'btnDlStats', 'btnDlClear', 'dlStats', 'sheetTools', 'btnOpenSun',
     'btnOpenCompass', 'btnOpenTracks', 'btnOpenGoTo', 'btnOpenGps', 'btnOpenBackup',
@@ -197,12 +201,34 @@
     if (!sync.state.enabled) return;
 
     const maps = sync.state.maps || [];
+    const shown = sync.filtered();
+
+    if (el.syncUser) {
+      el.syncUser.textContent = sync.state.user
+        ? 'Signed in as ' + sync.state.user
+        : sync.state.requireAuth ? 'Sign in to see your maps' : 'Not signed in (shared library)';
+    }
+    if (el.btnSyncSignIn) el.btnSyncSignIn.hidden = !!sync.state.user;
+    if (el.btnSyncSignOut) el.btnSyncSignOut.hidden = !sync.state.user;
+
+    fillPlaceSelect(el.syncState, 'Any state', sync.state.places.states || [], sync.state.stateFilter);
+    const counties = (sync.state.stateFilter &&
+      (sync.state.places.counties_by_state || {})[sync.state.stateFilter]) ||
+      sync.state.places.counties || [];
+    fillPlaceSelect(el.syncCounty, 'Any county', counties, sync.state.countyFilter);
+    if (el.syncSearch && document.activeElement !== el.syncSearch &&
+        el.syncSearch.value !== sync.state.q) {
+      el.syncSearch.value = sync.state.q || '';
+    }
+
     el.syncCount.textContent = maps.length ? '(' + maps.length + ')' : '';
 
     const busyIds = Object.keys(sync.state.busy).filter(function (k) { return sync.state.busy[k]; });
     let status;
     if (sync.state.error) {
-      status = 'Server problem: ' + sync.state.error;
+      status = sync.state.error === 'sign-in required'
+        ? 'Sign in to list the maps on the server.'
+        : 'Server problem: ' + sync.state.error;
     } else if (busyIds.length) {
       status = 'Downloading ' + busyIds.length + ' map' + (busyIds.length === 1 ? '' : 's') + '\u2026';
     } else if (!maps.length) {
@@ -211,14 +237,20 @@
       const pending = sync.pending().length;
       status = maps.length + ' map' + (maps.length === 1 ? '' : 's') + ' on the PC' +
         (pending ? ' \u00b7 ' + pending + ' to download' : ' \u00b7 all saved on this phone');
+      if (shown.length !== maps.length) status += ' \u00b7 ' + shown.length + ' shown';
       if (sync.state.lastCheck) status += ' \u00b7 checked ' + U.fmtAge(Date.now() - sync.state.lastCheck);
     }
     if (el.syncStatus.textContent !== status) el.syncStatus.textContent = status;
 
     el.syncList.innerHTML = '';
-    if (!maps.length) return;
+    if (!shown.length) {
+      if (maps.length) {
+        el.syncList.appendChild(U.el('div', { class: 'empty', text: 'No maps match those filters.' }));
+      }
+      return;
+    }
 
-    maps.forEach(function (m) {
+    shown.forEach(function (m) {
       const state = sync.statusFor(m);
       const layer = sync.localLayer(m.id);
       const isBusy = !!sync.state.busy[m.id];
@@ -232,13 +264,23 @@
 
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: m.name }));
-      const bits = [sync.humanSize(m.size)];
+      const bits = [];
+      if (m.place) bits.push(m.place);
+      bits.push(sync.humanSize(m.size));
       if (m.kind === 'pdf' && m.page > 1) bits.push('page ' + m.page);
       bits.push(state === 'synced' ? 'on this phone' : state === 'update' ? 'update available' : 'not downloaded');
       if (m.calib) bits.push('georeferenced');
       if (isBusy) bits.unshift('downloading\u2026');
       main.appendChild(U.el('div', { class: 'item-sub', text: bits.join(' \u00b7 ') }));
       row.appendChild(main);
+
+      const edit = U.el('button', { class: 'mini-btn', type: 'button', text: 'Edit',
+        title: 'Rename, or set the state / county / city' });
+      edit.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        openMapMeta(m);
+      });
+      row.appendChild(edit);
 
       const btn = U.el('button', {
         class: 'mini-btn' + (state === 'new' ? ' primary' : ''),
@@ -276,6 +318,87 @@
         });
       }
       el.syncList.appendChild(row);
+    });
+  }
+
+  function fillPlaceSelect(select, anyLabel, values, current) {
+    if (!select) return;
+    const wanted = current || '';
+    const signature = anyLabel + '|' + wanted + '|' + values.join(',');
+    if (select.dataset.sig === signature) return;
+    select.dataset.sig = signature;
+    select.innerHTML = '';
+    select.appendChild(U.el('option', { value: '', text: anyLabel }));
+    values.forEach(function (v) {
+      const opt = U.el('option', { value: v, text: v });
+      if (v.toLowerCase() === wanted.toLowerCase()) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+
+  function openMapMeta(remote) {
+    S.metaTarget = remote;
+    el.metaSub.textContent = (remote.kind || 'map').toUpperCase() +
+      (remote.size ? ' \u00b7 ' + H.Sync.humanSize(remote.size) : '') +
+      (remote.owner ? ' \u00b7 ' + remote.owner : '');
+    el.metaName.value = remote.name || '';
+    el.metaState.value = remote.state || '';
+    el.metaCounty.value = remote.county || '';
+    el.metaCity.value = remote.city || '';
+    el.metaPage.value = remote.page || 1;
+    el.metaNotes.value = remote.notes || '';
+    openSheet('sheetMapMeta');
+  }
+
+  function saveMapMeta() {
+    const target = S.metaTarget;
+    if (!target || !H.Sync) return;
+    const name = el.metaName.value.trim();
+    if (!name) { U.toast('Give the map a name', 'err'); return; }
+    el.btnMetaSave.disabled = true;
+    H.Sync.updateMeta(target.id, {
+      name: name,
+      page: Math.max(1, parseInt(el.metaPage.value, 10) || 1),
+      state: el.metaState.value.trim(),
+      county: el.metaCounty.value.trim(),
+      city: el.metaCity.value.trim(),
+      notes: el.metaNotes.value.trim()
+    }).then(function (json) {
+      el.btnMetaSave.disabled = false;
+      closeSheets();
+      U.toast('Saved "' + json.name + '"', 'ok');
+      H.Sync.probe();
+    }).catch(function (err) {
+      el.btnMetaSave.disabled = false;
+      U.toast(err && err.status === 403
+        ? 'Sign in as the owner to edit this map'
+        : 'Could not save: ' + ((err && err.message) || err), 'err', 4200);
+    });
+  }
+
+  function submitSignIn(mode) {
+    if (!H.Sync) return;
+    const user = el.signUser.value.trim();
+    const pass = el.signPass.value;
+    if (!user || !pass) { U.toast('User name and password, please', 'err'); return; }
+    el.btnSignInGo.disabled = true;
+    el.btnSignUpGo.disabled = true;
+    const call = mode === 'register' ? H.Sync.register(user, pass) : H.Sync.login(user, pass);
+    call.then(function (json) {
+      el.btnSignInGo.disabled = false;
+      el.btnSignUpGo.disabled = false;
+      el.signPass.value = '';
+      closeSheets();
+      U.toast((mode === 'register' ? 'Account created \u2014 signed in as ' : 'Signed in as ') +
+        (json.user || user), 'ok', 3000);
+      renderSync();
+    }).catch(function (err) {
+      el.btnSignInGo.disabled = false;
+      el.btnSignUpGo.disabled = false;
+      el.signNote.textContent = err && err.status === 401
+        ? 'Wrong user name or password.'
+        : 'Could not sign in: ' + ((err && err.message) || err);
+      U.toast('Sign-in failed', 'err');
     });
   }
 
@@ -807,25 +930,46 @@
     }
     list.forEach(function (w) {
       const info = D.TYPES[w.type] || D.TYPES.wp;
-      const row = U.el('button', { class: 'item', type: 'button' });
+      const row = U.el('div', { class: 'item item-split' });
+      const hit = U.el('button', { class: 'item-hit', type: 'button',
+        title: 'Show ' + (w.name || 'this spot') + ' on the map' });
       const pin = U.el('span', { class: 'pin-mini', style: 'background:' + info.color, title: info.label });
       pin.appendChild(D.iconFor(w.type, 'wp-ic pin-ic'));
-      row.appendChild(pin);
+      hit.appendChild(pin);
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: w.name || 'Spot' }));
       const bits = [info.label, G.formatCoord(w.lat, w.lon, D.settings.coordFormat)];
       if (w.notes) bits.push(w.notes);
       main.appendChild(U.el('div', { class: 'item-sub', text: bits.join(' \u00b7 ') }));
-      row.appendChild(main);
+      hit.appendChild(main);
       if (st.lat != null) {
         const d = G.distance(st.lat, st.lon, w.lat, w.lon);
         const brg = G.bearing(st.lat, st.lon, w.lat, w.lon);
-        row.appendChild(U.el('div', { class: 'item-right',
+        hit.appendChild(U.el('div', { class: 'item-right',
           text: U.fmtDist(d) + '\n' + Math.round(brg) + '\u00b0' }));
       }
-      row.addEventListener('click', function () { openWptSheet(w); });
+      // Tapping the row flies the map to the spot; the Edit button opens the sheet.
+      hit.addEventListener('click', function () { goToSpot(w); });
+      row.appendChild(hit);
+      const edit = U.el('button', { class: 'mini-btn', type: 'button', text: 'Edit' });
+      edit.addEventListener('click', function () { openWptSheet(w); });
+      row.appendChild(edit);
       el.wpList.appendChild(row);
     });
+  }
+
+  /** Centre the map on a spot (used by the list and by tap-to-go). */
+  function goToSpot(w) {
+    setFollow(false);
+    map.selectedId = w.id;
+    const z = Math.max(map.zoom, 16);
+    map.setView(w.lat, w.lon, z);
+    map.invalidate();
+    closeSheets();
+    const st = GPS.state;
+    const d = st.lat != null ? G.distance(st.lat, st.lon, w.lat, w.lon) : null;
+    U.toast((w.name || 'Spot') + (d != null ? ' \u00b7 ' + U.fmtDist(d) + ' away' : '') +
+      ' \u2014 tap the pin to edit', 'ok', 2600);
   }
 
   function updateWpBadge() {
@@ -2078,6 +2222,42 @@
       });
     });
     U.on(el.btnSyncAll, 'click', downloadAllRemote);
+    U.on(el.syncSearch, 'input', U.debounce(function () {
+      if (!H.Sync) return;
+      H.Sync.state.q = el.syncSearch.value || '';
+      renderSync();
+    }, 160));
+    U.on(el.syncState, 'change', function () {
+      if (!H.Sync) return;
+      H.Sync.state.stateFilter = el.syncState.value || '';
+      H.Sync.state.countyFilter = '';
+      el.syncCounty.dataset.sig = '';
+      renderSync();
+    });
+    U.on(el.syncCounty, 'change', function () {
+      if (!H.Sync) return;
+      H.Sync.state.countyFilter = el.syncCounty.value || '';
+      renderSync();
+    });
+    U.on(el.btnSyncSignIn, 'click', function () {
+      el.signNote.textContent = 'A new account needs a password of at least 8 characters. ' +
+        'The library keeps your maps separate; maps without an owner stay shared.';
+      openSheet('sheetSignIn');
+      el.signUser.focus();
+    });
+    U.on(el.btnSyncSignOut, 'click', function () {
+      if (!H.Sync) return;
+      H.Sync.logout().then(function () {
+        U.toast('Signed out', 'ok');
+        renderSync();
+      });
+    });
+    U.on(el.btnSignInGo, 'click', function () { submitSignIn('login'); });
+    U.on(el.btnSignUpGo, 'click', function () { submitSignIn('register'); });
+    U.on(el.signPass, 'keydown', function (ev) {
+      if (ev.key === 'Enter') submitSignIn('login');
+    });
+    U.on(el.btnMetaSave, 'click', saveMapMeta);
     U.on(el.toggleTiles, 'change', function () {
       D.settings.tiles = el.toggleTiles.checked;
       map.tilesEnabled = D.settings.tiles;

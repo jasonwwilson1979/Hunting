@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit {{ doc.name }} — HuntMap</title>
+{% include "maps/_style.html" %}
+</head>
+<body>
+<div class="wrap">
+  <h1>Edit map</h1>
+  <p class="muted">{{ doc.name }} &middot; {{ doc.get_kind_display }} &middot; {{ doc.size_mb }} MB
+    {% if doc.place %} &middot; {{ doc.place }}{% endif %}</p>
+
+  {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="row">
+        <label>Name {{ form.name }}</label>
+        <label style="flex:0 0 110px">PDF page {{ form.page }}</label>
+      </div>
+      <div class="row">
+        <label>State / province {{ form.state }}</label>
+        <label>County {{ form.county }}</label>
+        <label>Town / city {{ form.city }}</label>
+      </div>
+      <label>Notes {{ form.notes }}</label>
+      <div class="row">
+        <button type="submit">Save</button>
+        <a class="btn ghost" href="{% url 'library' %}">Cancel</a>
+      </div>
+    </form>
+    <div class="hint">The file itself is not changed. Place names are capitalised automatically, so
+      “rutland” and “Rutland” end up in the same filter.</div>
+  </div>
+</div>
+</body>
+</html>

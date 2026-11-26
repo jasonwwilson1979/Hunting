@@ -3,6 +3,7 @@ import hashlib
 import mimetypes
 from pathlib import Path
 
+from django.conf import settings
 from django.db import models
 
 ALLOWED_EXTS = {".pdf", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".webp"}
@@ -42,6 +43,18 @@ class MapDocument(models.Model):
     ext = models.CharField(max_length=8, blank=True, editable=False)
     page = models.PositiveIntegerField(default=1, help_text="Page to use for multi-page PDFs")
     notes = models.TextField(blank=True)
+
+    # Where the map is, so a big library can be filtered by place.
+    state = models.CharField(max_length=90, blank=True, db_index=True,
+                             help_text="State / province, e.g. Vermont")
+    county = models.CharField(max_length=90, blank=True, db_index=True,
+                              help_text="County, e.g. Rutland")
+    city = models.CharField(max_length=90, blank=True,
+                            help_text="Town / city the map covers")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="huntmap_documents",
+                              help_text="Empty = shared with every account")
+
     sha256 = models.CharField(max_length=64, blank=True, db_index=True, editable=False)
     size = models.BigIntegerField(default=0, editable=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -72,6 +85,11 @@ class MapDocument(models.Model):
     @property
     def size_mb(self):
         return round(self.size / 1048576, 1)
+
+    @property
+    def place(self):
+        """'Vermont · Rutland · Killington' — only the parts that are filled in."""
+        return " \u00b7 ".join(part for part in (self.state, self.county, self.city) if part)
 
     def rehash(self):
         """Fill in kind/ext/size/sha256 from the uploaded file."""

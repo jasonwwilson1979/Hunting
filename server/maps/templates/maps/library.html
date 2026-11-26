@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HuntMap library</title>
+{% include "maps/_style.html" %}
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>Map library</h1>
+      <p class="muted">Search by name or place, then open a map or fix its details.</p>
+    </div>
+    <div class="nav">
+      <a href="/">Map app</a>
+      <a href="{% url 'upload' %}">Upload</a>
+      {% if user.is_staff %}<a href="/admin/">Admin</a>{% endif %}
+      {% if user.is_authenticated %}
+        <span class="who">Signed in as <b>{{ user.username }}</b></span>
+        <form class="inline" method="post" action="{% url 'logout' %}">
+          {% csrf_token %}<button class="btn ghost" type="submit">Sign out</button>
+        </form>
+      {% else %}
+        <a href="{% url 'login' %}">Sign in</a>
+        <a href="{% url 'register' %}">Create account</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+  {% if require_auth and not user.is_authenticated %}
+    <div class="msg error">This server only shows the library to signed-in accounts.
+      <a href="{% url 'login' %}?next={% url 'library' %}">Sign in</a> or
+      <a href="{% url 'register' %}">create an account</a>.</div>
+  {% endif %}
+
+  <h2>Find a map</h2>
+  <div class="card">
+    <form method="get">
+      <div class="row">
+        <label>Search (name, notes, place)
+          <input type="search" name="q" value="{{ q }}" placeholder="Name, notes, town, county&hellip;">
+        </label>
+        <label>State
+          <select name="state">
+            <option value="">Any state</option>
+            {% for s in states %}<option value="{{ s }}"{% if s == state %} selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>County
+          <select name="county">
+            <option value="">Any county</option>
+            {% for c in county_options %}<option value="{{ c }}"{% if c == county %} selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="narrow" style="flex:0 0 150px">
+          <button type="submit">Filter</button>
+        </div>
+      </div>
+    </form>
+    {% if q or state or county %}
+      <p class="muted">Filtering{% if q %} for “{{ q }}”{% endif %}{% if state %} in {{ state }}{% endif %}{% if county %} / {{ county }}{% endif %}.
+        <a href="{% url 'library' %}">Clear</a></p>
+    {% endif %}
+  </div>
+
+  <h2>{{ maps|length }} map{{ maps|length|pluralize }} &middot; {{ total_mb }} MB</h2>
+  <div class="card">
+    {% if maps %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Place</th><th>Type</th><th>Size</th><th>Georef.</th><th>Updated</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for m in maps %}
+        <tr>
+          <td>
+            <b><a href="{% url 'map-file' m.pk %}">{{ m.name }}</a></b>
+            {% if m.notes %}<div class="muted">{{ m.notes|truncatechars:90 }}</div>{% endif %}
+            {% if m.owner %}<div class="muted">owner: {{ m.owner.username }}</div>{% endif %}
+          </td>
+          <td>{% if m.place %}{{ m.place }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{{ m.get_kind_display }}{% if m.kind == 'pdf' and m.page > 1 %} <span class="pill">p{{ m.page }}</span>{% endif %}</td>
+          <td class="mono">{{ m.size_mb }} MB</td>
+          <td>{% if m.calib %}<span class="pill ok">yes</span>{% else %}<span class="pill warn">no</span>{% endif %}</td>
+          <td class="muted">{{ m.updated_at|date:"Y-m-d H:i" }}</td>
+          <td class="muted">
+            <a href="{% url 'map-file' m.pk %}">open</a>
+            {% if user.is_staff or m.owner_id == user.id %}
+              &middot; <a href="{% url 'map-edit' m.pk %}">edit</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="muted">No maps match. <a href="{% url 'upload' %}">Upload one</a> or
+        <a href="{% url 'library' %}">clear the filters</a>.</p>
+    {% endif %}
+  </div>
+
+  <p class="muted" style="margin-top:22px">
+    Maps are stored in <code>server/media/maps/</code>. Phones download them under
+    <b>Maps → From your PC</b> and keep working with no signal.
+  </p>
+</div>
+</body>
+</html>

@@ -134,19 +134,19 @@ check "upload accepted behind the proxy" "$(printf '%s' "$proxied" | grep -q 'Pr
 check "file_url uses the public https origin" \
   "$(app "$PROXY_BASE/api/maps/" | grep -q "\"file_url\": \"https://${PROXY_HOST}/api/maps/1/file\""; echo $?)"
 check "upload page redirects to login" \
-  "$(app -o /dev/null -w '%{redirect_url}' "$PROXY_BASE/upload/" | grep -q '/admin/login/?next=/upload/'; echo $?)"
+  "$(app -o /dev/null -w '%{redirect_url}' "$PROXY_BASE/upload/" | grep -q '/accounts/login/?next=/upload/'; echo $?)"
 
 echo "== logging in through the proxy (CSRF + https origin)"
 JAR="$(mktemp)"
 LOGIN_HTML="$(mktemp)"
-app -c "$JAR" "$PROXY_BASE/admin/login/" > "$LOGIN_HTML"
+app -c "$JAR" "$PROXY_BASE/accounts/login/" > "$LOGIN_HTML"
 TOKEN="$(grep -o 'name="csrfmiddlewaretoken" value="[^"]*"' "$LOGIN_HTML" | head -1 | sed 's/.*value="//;s/"$//')"
 check "login form rendered with a CSRF token" "$([ -n "$TOKEN" ]; echo $?)"
 LOGIN_STATUS="$(app -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code}' \
-  -H "Origin: https://${PROXY_HOST}" -H "Referer: https://${PROXY_HOST}/admin/login/" \
+  -H "Origin: https://${PROXY_HOST}" -H "Referer: https://${PROXY_HOST}/accounts/login/" \
   --data-urlencode "csrfmiddlewaretoken=${TOKEN}" \
   --data-urlencode "username=admin" --data-urlencode "password=e2e-password" \
-  --data-urlencode "next=/upload/" "$PROXY_BASE/admin/login/")"
+  --data-urlencode "next=/upload/" "$PROXY_BASE/accounts/login/")"
 check "login POST accepted behind the proxy (${LOGIN_STATUS}, not 403)" \
   "$([ "$LOGIN_STATUS" = 302 ]; echo $?)"
 check "upload page opens once logged in" \

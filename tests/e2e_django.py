@@ -68,8 +68,10 @@ def main():
     shutil.rmtree(MEDIA, ignore_errors=True)
 
     manage("migrate", "--noinput")
-    manage("addmap", os.path.join(ROOT, "tests", "sample-topo-map.pdf"), "--name", "PC Topo")
-    manage("addmap", os.path.join(ROOT, "tests", "sample-topo-map.tif"), "--name", "PC TIFF")
+    manage("addmap", os.path.join(ROOT, "tests", "sample-topo-map.pdf"), "--name", "PC Topo",
+           "--state", "Vermont", "--county", "Rutland", "--city", "Killington")
+    manage("addmap", os.path.join(ROOT, "tests", "sample-topo-map.tif"), "--name", "PC TIFF",
+           "--state", "Maine", "--county", "Franklin", "--city", "Rangeley")
 
     server = subprocess.Popen(
         [sys.executable, "serve.py", "--http", "--port", str(PORT), "--bind", "127.0.0.1", "--no-migrate"],
@@ -101,8 +103,66 @@ def main():
             listed = page.inner_text("#syncList")
             check("PC library is listed", "PC Topo" in listed and "PC TIFF" in listed,
                   page.inner_text("#syncStatus"))
+            check("library rows show the place", "Vermont" in listed and "Rutland" in listed, listed[:120])
 
-            page.click("#btnSyncAll")
+            # ---------------- filters, editing, accounts ----------------
+            page.fill("#syncSearch", "maine")
+            page.wait_for_timeout(450)
+            check("search narrows the PC library",
+                  page.evaluate("document.querySelectorAll('#syncList .item').length") == 1,
+                  page.inner_text("#syncStatus"))
+            page.fill("#syncSearch", "")
+            page.wait_for_timeout(450)
+            check("clearing the search restores the list",
+                  page.evaluate("document.querySelectorAll('#syncList .item').length") == 2)
+
+            page.select_option("#syncState", "Vermont")
+            page.wait_for_timeout(450)
+            check("state menu filters the library",
+                  page.evaluate("document.querySelectorAll('#syncList .item').length") == 1,
+                  page.evaluate("document.querySelectorAll('#syncList .item').length"))
+            page.select_option("#syncState", "")
+            page.wait_for_timeout(450)
+
+            page.click("#syncList .item .mini-btn")      # first row's Edit
+            page.wait_for_timeout(500)
+            page.fill("#metaCity", "Stockbridge")
+            page.click("#btnMetaSave")
+            page.wait_for_timeout(1200)
+            edited = page.evaluate("window.Hunt.Sync.state.maps.map(function (m) { return m.city; })")
+            check("editing a map saves to the server", "Stockbridge" in edited, edited)
+
+            page.evaluate("document.getElementById('btnSyncSignIn').click()")
+            page.wait_for_timeout(600)
+            page.fill("#signUser", "scout")
+            page.fill("#signPass", "huntmap-pass-1")
+            page.evaluate("document.getElementById('btnSignUpGo').click()")
+            page.wait_for_timeout(1800)
+            account = page.evaluate("""(() => ({
+                user: window.Hunt.Sync.state.user,
+                label: document.getElementById('syncUser').textContent,
+                rows: document.querySelectorAll('#syncList .item').length
+            }))()""")
+            check("creating a local account signs in", account["user"] == "scout", account)
+            check("panel shows the signed-in user", "scout" in account["label"], account["label"])
+            check("shared maps stay visible to the new account", account["rows"] == 2, account)
+
+            page.evaluate("document.getElementById('btnSyncSignOut').click()")
+            page.wait_for_timeout(1200)
+            check("signing out clears the user",
+                  page.evaluate("window.Hunt.Sync.state.user") is None,
+                  page.evaluate("window.Hunt.Sync.state.user"))
+
+            library_page = page.request.get(BASE + "/library/")
+            check("server library page lists the maps with places",
+                  library_page.ok and "Rutland" in library_page.text()
+                  and "Franklin" in library_page.text(), library_page.status)
+            filtered_page = page.request.get(BASE + "/library/?state=Maine")
+            check("server library page filters by state",
+                  filtered_page.ok and "PC TIFF" in filtered_page.text()
+                  and "PC Topo" not in filtered_page.text(), filtered_page.status)
+
+            page.evaluate("document.getElementById('btnSyncAll').click()")
             page.wait_for_function(
                 "window.Hunt.Data.layers.filter(function (l) { return l.remoteId && l.img; }).length === 2",
                 timeout=150000)

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — HuntMap</title>
+{% include "maps/_style.html" %}
+</head>
+<body>
+<div class="wrap" style="max-width:420px">
+  <h1>Sign in</h1>
+  <p class="muted">Local accounts on this server. Nothing leaves the machine.</p>
+
+  {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors }}</div>{% endif %}
+  {% if next %}<p class="muted">You will continue to <span class="mono">{{ next }}</span>.</p>{% endif %}
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <label>User name {{ form.username }}</label>
+      <label>Password {{ form.password }}</label>
+      <button type="submit">Sign in</button>
+      <input type="hidden" name="next" value="{{ next }}">
+    </form>
+    <div class="hint">No account yet? <a href="{% url 'register' %}">Create one</a> — or use the
+      admin password with <span class="mono">/admin/</span>.</div>
+  </div>
+</div>
+</body>
+</html>
