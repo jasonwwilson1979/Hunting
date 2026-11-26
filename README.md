@@ -14,8 +14,9 @@ scouting and hunting with your phone:
   *OpenStreetMap's public servers block networks that bulk-download tiles; the app sends a proper
   Referer, fetches OSM tiles one at a time, stops when the server says no and points you at
   USGS/Esri (which is why USGS Topo is the default in North America).*
-- **Spots** (treestand, blind, trail cam, water, food plot, sign, kill site, camp,
-  vehicle, hazard) with notes, bearings and distances.
+- **Spots** (treestand, blind, building/cabin, deer, bear, turkey, trail cam, water, food plot,
+  sign, kill site, camp, vehicle, hazard) with notes, bearings and distances — each with its own
+  icon on the map, in the list and on the type chips.
 - **Track recording** with distance, time, elevation gain and GPX export.
 - **Sun & moon**: sunrise, sunset, civil twilight, legal-light window, moon phase, % lit.
 - **Compass**, **distance measuring**, **go to coordinates**, UTM / DMS / decimal formats.
@@ -409,11 +410,17 @@ Related log lines and what they mean:
 
 | Button | What it does |
 | --- | --- |
-| **Mark** | Save the current GPS position as a spot (type, name, notes). |
+| **Mark** | Save a spot: at your GPS position, or at the crosshair while placement mode is on. |
 | **Record** | Start/stop a GPS track. Keep the app open while recording. |
 | **Spots** | List, search, edit, navigate to, share, GPX export/import. |
 | **Tools** | Sun & moon, compass, tracks, go-to coordinates, GPS details, backup, settings. |
 | **Maps** | Base map choice, your PDF maps, offline tile download. |
+
+**Spot types and their icons.** Every type has its own line-art icon, drawn inside the map pin, on
+the type chips and in the spot list: **treestand**, **ground blind**, **building / cabin**,
+**deer**, **bear**, **turkey**, **trail camera**, **water**, **food plot**, **sign / scrape**,
+**track / rub**, **kill site**, **camp**, **vehicle**, **hazard**, **waypoint**. The icon is what
+you see at a glance on the map; the label is in the list and in the pin tooltip.
 
 Other gestures:
 
@@ -421,9 +428,17 @@ Other gestures:
   opens that spot.
 - **Long-press the map** → drop a new spot exactly there (handy for a rub or scrape seen on
   a photo map).
+- **◎ Crosshair** (map controls) → placement mode: a crosshair sits in the middle of the map,
+  the panel shows its coordinates and your distance/bearing to it, and you **drag the map** to
+  aim. Press **Drop waypoint**, or just tap the map, to place it there. The Mark button also
+  drops at the crosshair while the mode is on. **Done** leaves the mode.
 - **Pinch / drag** → zoom and pan. **Double-tap** zooms in.
 - **Tap the coordinate chip** → cycle decimal ↔ deg/min/sec ↔ UTM.
 - **Tap the GPS chip** → GPS details and a restart button.
+
+![Crosshair placement mode: coordinates, distance from you, and a Drop button](tests/screenshots/09-crosshair.png)
+
+![Spot list and map pins carrying their type icons](tests/screenshots/10-spot-icons.png)
 
 ---
 
@@ -646,14 +661,17 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (60 checks): load without errors, GPS fix, HUD coordinates/UTM, base map default and
+`tests/e2e.py` (77 checks): load without errors, GPS fix, HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
-page is never drawn and marks the provider blocked), waypoint save + persistence, navigation bar,
+page is never drawn and marks the provider blocked), the 16 spot types and their icons (rasterised
+for the canvas, shown on the chips and in the list), waypoint save + persistence, navigation bar,
 sun/moon panel, the built-in self-test, PDF open/rasterise, adding
 a PDF through the real UI (file picker → rasterise → tap two control points → apply), north-up
-georeferencing, overlay pixels on the canvas, track recording while moving, GPX round-trip,
-reload persistence, service worker, a full **offline reload**, a **TIFF** map loaded through the
-UI, rotated 90°, georeferenced with a 5° fine rotation, and the align-bar sliders.
+georeferencing, overlay pixels on the canvas, **crosshair placement** (mode, canvas drawing,
+HUD readout, panning moves the target, Drop button and tap both place a waypoint away from the GPS
+dot), track recording while moving, GPX round-trip, reload persistence, service worker, a full
+**offline reload**, a **TIFF** map loaded through the UI, rotated 90°, georeferenced with a 5° fine
+rotation, and the align-bar sliders.
 
 `tests/e2e_django.py` (13 checks): Django serves the app, the PC library is listed, PDF + TIFF
 downloaded and stored, the phone's georeference is uploaded to the PC, then with the network

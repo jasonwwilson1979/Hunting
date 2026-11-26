@@ -145,6 +145,28 @@ def main():
             check("block page reports the reason to the UI",
                   any(c[0] == "osm" and c[2] is True for c in blocked["calls"]), blocked["calls"])
 
+            # ---------------- spot type icons ----------------
+            icons = page.evaluate("""(async () => {
+                const D = window.Hunt.Data;
+                const missing = D.TYPE_ORDER.filter(t => !D.ICON_PATHS[D.TYPES[t].icon]);
+                D.pinIcon('deer');
+                await new Promise(r => setTimeout(r, 500));
+                const img = D.pinIcon('deer');
+                return {
+                    count: D.TYPE_ORDER.length,
+                    missing: missing,
+                    deer: !!D.TYPES.deer, bear: !!D.TYPES.bear,
+                    turkey: !!D.TYPES.turkey, building: !!D.TYPES.building,
+                    raster: !!img && img.tagName === 'IMG' && img.naturalWidth > 0,
+                    rasterW: img ? img.naturalWidth : 0
+                };
+            })()""")
+            check("new spot types exist (deer, bear, turkey, building)",
+                  all([icons["deer"], icons["bear"], icons["turkey"], icons["building"]]), icons)
+            check("every spot type has an icon", icons["missing"] == [], icons["missing"])
+            check("pin icons rasterise for the map canvas",
+                  icons["raster"] is True and icons["rasterW"] >= 48, icons)
+
             # ---------------- waypoint ----------------
             page.click("#btnMark")
             page.wait_for_timeout(500)
@@ -444,7 +466,114 @@ def main():
             })()""")
             check("slider adjustments are saved", abs(saved["deg"] - 12) < 0.01 and saved["op"] > 0.8, saved)
 
+            # ---------------- crosshair placement ----------------
+            page.click("#btnPin")
+            page.wait_for_timeout(400)
+            pin = page.evaluate("""(() => {
+                const c = document.getElementById('map');
+                const ctx = c.getContext('2d');
+                const dpr = window.Hunt.App.map.dpr;
+                const cx = Math.round(c.width / 2), cy = Math.round(c.height / 2);
+                const d = ctx.getImageData(cx - 20, cy - 20, 40, 40).data;
+                let accentish = 0;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i] > 180 && d[i + 1] > 90 && d[i + 1] < 180 && d[i + 2] < 90) accentish++;
+                }
+                return {
+                    mode: window.Hunt.App.state.pinMode,
+                    mapMode: window.Hunt.App.map.pinMode,
+                    hud: !document.getElementById('pinHud').hidden,
+                    body: document.body.classList.contains('pinning'),
+                    coords: document.getElementById('pinCoords').textContent,
+                    from: document.getElementById('pinFromYou').textContent,
+                    accentPixels: accentish,
+                    dpr: dpr
+                };
+            })()""")
+            check("crosshair mode turns on", pin["mode"] is True and pin["mapMode"] is True, pin)
+            check("crosshair HUD is visible", pin["hud"] is True and pin["body"] is True, pin)
+            check("crosshair HUD shows coordinates", any(ch.isdigit() for ch in pin["coords"]), pin["coords"])
+            check("crosshair HUD shows your distance to it", "of you" in pin["from"], pin["from"])
+            check("crosshair is drawn on the map centre", pin["accentPixels"] >= 3, pin["accentPixels"])
+            page.screenshot(path=os.path.join(SHOTS, "09-crosshair.png"))
 
+            before = page.evaluate("JSON.stringify(window.Hunt.App.map.pinLatLon())")
+            page.mouse.move(170, 520)
+            page.mouse.down()
+            page.mouse.move(170, 360, steps=12)
+            page.mouse.up()
+            page.wait_for_timeout(350)
+            after = page.evaluate("JSON.stringify(window.Hunt.App.map.pinLatLon())")
+            check("panning moves the crosshair target", before != after, (before, after))
+            hud_after = page.inner_text("#pinFromYou")
+            check("HUD follows the pan", any(ch.isdigit() for ch in hud_after) or "no GPS" in hud_after, hud_after)
+
+            page.click("#btnPinDrop")
+            page.wait_for_timeout(400)
+            sheet_text = page.inner_text("#markCoords")
+            check("Drop opens the mark sheet at the crosshair",
+                  "crosshair" in sheet_text.lower(), sheet_text.replace("\n", " | "))
+            page.fill("#markName", "Crosshair Buck")
+            page.click("#btnMarkSave")
+            page.wait_for_timeout(700)
+            dropped = page.evaluate("""(() => {
+                const w = window.Hunt.Data.waypoints.filter(x => x.name === 'Crosshair Buck')[0];
+                const st = window.Hunt.GPS.state;
+                if (!w) return null;
+                return {lat: w.lat, lon: w.lon,
+                        dist: window.Hunt.Geo.distance(st.lat, st.lon, w.lat, w.lon)};
+            })()""")
+            check("waypoint lands where the crosshair was, not on the GPS dot",
+                  bool(dropped) and dropped["dist"] > 50, dropped)
+
+            # tap anywhere in crosshair mode drops at that point
+            page.mouse.click(240, 360)
+            page.wait_for_timeout(450)
+            tap_text = page.inner_text("#markCoords")
+            check("tapping the map opens the sheet at the tapped point",
+                  "tapped" in tap_text.lower(), tap_text.replace("\n", " | "))
+            page.click("#btnMarkCancel")
+            page.wait_for_timeout(300)
+
+            page.click("#btnPinDone")
+            page.wait_for_timeout(300)
+            off = page.evaluate("""(() => ({
+                mode: window.Hunt.App.state.pinMode,
+                hud: document.getElementById('pinHud').hidden,
+                body: document.body.classList.contains('pinning')
+            }))()""")
+            check("crosshair mode turns off", off["mode"] is False and off["hud"] is True and off["body"] is False, off)
+
+            # ---------------- icons in the UI (chips + spot list) ----------------
+            page.click("#btnMark")
+            page.wait_for_timeout(300)
+            chip_icons = page.evaluate(
+                "document.querySelectorAll('#markTypes .chip-ic svg.wp-ic').length")
+            check("every type chip shows an icon", chip_icons >= 16, chip_icons)
+            page.click('#markTypes .chip-btn[data-type="deer"]')
+            page.fill("#markName", "Buck Ridge")
+            page.fill("#markNotes", "rubbed cedar, morning")
+            page.click("#btnMarkSave")
+            page.wait_for_timeout(800)
+            row = page.evaluate("""(() => {
+                const rows = [...document.querySelectorAll('#wpList .item')];
+                const r = rows.find(x => x.textContent.indexOf('Buck Ridge') >= 0);
+                if (!r) return null;
+                const svg = r.querySelector('.pin-mini svg.wp-ic');
+                return {
+                    icons: r.querySelectorAll('.pin-mini svg.wp-ic').length,
+                    paths: svg ? svg.children.length : 0,
+                    sub: (r.querySelector('.item-sub') || {}).textContent || ''
+                };
+            })()""")
+            check("deer spot draws its icon in the list",
+                  bool(row) and row["icons"] == 1 and row["paths"] >= 3, row)
+            check("list row names the type", "Deer" in (row or {}).get("sub", ""), row)
+            page.click("#btnWaypoints")
+            page.wait_for_timeout(500)
+            page.screenshot(path=os.path.join(SHOTS, "10-spot-icons.png"))
+            page.click("#sheetWaypoints [data-close]")
+            page.wait_for_timeout(300)
 
             page.screenshot(path=os.path.join(SHOTS, "04-final.png"))
             check("no uncaught JS errors at end", not page_errors, page_errors[:3])

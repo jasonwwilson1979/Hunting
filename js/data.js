@@ -8,20 +8,79 @@
   const U = H.Util, G = H.Geo, DB = H.DB;
 
   D.TYPES = {
-    stand: { label: 'Treestand', code: 'ST', color: '#e2801f' },
-    blind: { label: 'Ground blind', code: 'BL', color: '#c9a227' },
-    cam: { label: 'Trail camera', code: 'CM', color: '#8ec46a' },
-    water: { label: 'Water', code: 'H2O', color: '#4aa3d8' },
-    food: { label: 'Food plot', code: 'FD', color: '#9fae4a' },
-    sign: { label: 'Sign / scrape', code: 'SG', color: '#c58f2a' },
-    track: { label: 'Track / rub', code: 'TR', color: '#b07a52' },
-    kill: { label: 'Kill site', code: 'K', color: '#d9534f' },
-    camp: { label: 'Camp', code: 'CP', color: '#9b8bc4' },
-    park: { label: 'Vehicle', code: 'V', color: '#7f8c8d' },
-    hazard: { label: 'Hazard', code: '!', color: '#e2513f' },
-    wp: { label: 'Waypoint', code: 'WP', color: '#e2801f' }
+    stand: { label: 'Treestand', code: 'ST', color: '#e2801f', icon: 'stand' },
+    blind: { label: 'Ground blind', code: 'BL', color: '#c9a227', icon: 'blind' },
+    building: { label: 'Building / cabin', code: 'BD', color: '#8fa1b0', icon: 'building' },
+    deer: { label: 'Deer', code: 'DR', color: '#c98a3f', icon: 'deer' },
+    bear: { label: 'Bear', code: 'BR', color: '#6f5a45', icon: 'bear' },
+    turkey: { label: 'Turkey', code: 'TY', color: '#a8562f', icon: 'turkey' },
+    cam: { label: 'Trail camera', code: 'CM', color: '#8ec46a', icon: 'cam' },
+    water: { label: 'Water', code: 'H2O', color: '#4aa3d8', icon: 'water' },
+    food: { label: 'Food plot', code: 'FD', color: '#9fae4a', icon: 'food' },
+    sign: { label: 'Sign / scrape', code: 'SG', color: '#c58f2a', icon: 'sign' },
+    track: { label: 'Track / rub', code: 'TR', color: '#b07a52', icon: 'track' },
+    kill: { label: 'Kill site', code: 'K', color: '#d9534f', icon: 'kill' },
+    camp: { label: 'Camp', code: 'CP', color: '#9b8bc4', icon: 'camp' },
+    park: { label: 'Vehicle', code: 'V', color: '#7f8c8d', icon: 'park' },
+    hazard: { label: 'Hazard', code: '!', color: '#e2513f', icon: 'hazard' },
+    wp: { label: 'Waypoint', code: 'WP', color: '#e2801f', icon: 'pin' }
   };
-  D.TYPE_ORDER = ['stand', 'blind', 'cam', 'water', 'food', 'sign', 'track', 'kill', 'camp', 'park', 'hazard', 'wp'];
+  D.TYPE_ORDER = ['stand', 'blind', 'building', 'deer', 'bear', 'turkey', 'cam', 'water',
+    'food', 'sign', 'track', 'kill', 'camp', 'park', 'hazard', 'wp'];
+
+  /* Line-art icons, 24x24, drawn as SVG. They are used three times: inside the
+     map pins (rasterised), on the type chips, and in the spot list. */
+  D.ICON_PATHS = {
+    stand: '<path d="M8.5 20.5V7.5h7v13"/><path d="M6.5 7.5h11"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h7"/>',
+    blind: '<path d="M3.5 19.5a8.5 8.5 0 0 1 17 0z"/><path d="M9.5 19.5V16h5v3.5"/><path d="M12 4.5V7"/>',
+    building: '<path d="M3.5 20V10L12 4l8.5 6v10z"/><path d="M9.5 20v-6h5v6"/>',
+    deer: '<path d="M12 13.6a3.3 3.3 0 1 1 0 6.6 3.3 3.3 0 0 1 0-6.6z"/><path d="M9.4 14.2 6.8 11M14.6 14.2 17.2 11"/><path d="M6.8 11 4 10.2M6.8 11l.6-2.6M17.2 11l2.8-.8M17.2 11l-.6-2.6"/>',
+    bear: '<path d="M12 11a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 12 11z"/><path d="M6.6 8.2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/><path d="M17.4 8.2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/><path d="M12 16.4v.01"/>',
+    turkey: '<path d="M9.5 13.5a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2z"/><path d="M13.1 15.4 20 8.5M17 4.5l3.5 3.5-3.5 3.5"/><path d="M7.2 17.1h-3M7.6 14.6 5.2 12.6"/>',
+    cam: '<rect x="3.5" y="7.5" width="17" height="10" rx="2"/><path d="M12 10.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z"/><path d="M6.4 10.2v.01"/>',
+    water: '<path d="M12 3.5c3.4 4 5.8 6.9 5.8 9.4a5.8 5.8 0 1 1-11.6 0c0-2.5 2.4-5.4 5.8-9.4z"/>',
+    food: '<path d="M12 20.5v-7.7"/><path d="M12 12.8C8.4 12.8 6 10.6 6 7.2c3.6 0 6 2.2 6 5.6z"/><path d="M12 12.8c3.6 0 6-2.2 6-5.6-3.6 0-6 2.2-6 5.6z"/>',
+    sign: '<path d="M8.4 4.5c1.5 0 2.3 1.4 2.3 2.8 0 1.8-1.1 3-2.3 4.9-1.2-1.9-2.3-3.1-2.3-4.9 0-1.4.8-2.8 2.3-2.8z"/><path d="M15.6 9.5c1.5 0 2.3 1.4 2.3 2.8 0 1.8-1.1 3-2.3 4.9-1.2-1.9-2.3-3.1-2.3-4.9 0-1.4.8-2.8 2.3-2.8z"/>',
+    track: '<path d="M5 19c2.5 0 3.5-2 5-4s3-3.5 5-3.5"/><path d="M8.2 6.6a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"/><path d="M15.4 14.6a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"/>',
+    kill: '<path d="M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17z"/><path d="m8.6 8.6 6.8 6.8M15.4 8.6l-6.8 6.8"/>',
+    camp: '<path d="M3 19.5 12 4.5l9 15z"/><path d="M12 19.5v-4.8"/><path d="M3.5 19.5h17"/>',
+    park: '<path d="M3.5 16.5v-4h9l2.8 3H21v4"/><path d="M3.5 16.5h17"/><path d="M6.8 18.9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/><path d="M17.2 18.9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>',
+    hazard: '<path d="M12 3.5 22 20.5H2z"/><path d="M12 9.5v5M12 17.4v.01"/>',
+    pin: '<path d="M12 21s6.5-6 6.5-10.5a6.5 6.5 0 1 0-13 0C5.5 15 12 21 12 21z"/><path d="M12 12.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/>'
+  };
+
+  /** Inline SVG icon for a waypoint type (chips, spot list, headers). */
+  D.iconFor = function (type, cls) {
+    const info = D.TYPES[type] || D.TYPES.wp;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', cls || 'wp-ic');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = D.ICON_PATHS[info.icon] || D.ICON_PATHS.pin;
+    return svg;
+  };
+
+  /* Map pins need pixels, not DOM nodes: rasterise each icon once from an SVG
+     data URL and cache it. Until it is ready the pin shows its letter code. */
+  const pinIcons = {};
+  D.pinIcon = function (type) {
+    const info = D.TYPES[type] || D.TYPES.wp;
+    const key = info.icon;
+    if (Object.prototype.hasOwnProperty.call(pinIcons, key)) return pinIcons[key] || null;
+    pinIcons[key] = null;
+    const path = D.ICON_PATHS[key] || D.ICON_PATHS.pin;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="60" height="60">' +
+      '<g fill="none" stroke="#0d1108" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      path + '</g></svg>';
+    const img = new Image();
+    img.onload = function () {
+      pinIcons[key] = img;
+      if (D.onPinIconLoad) { try { D.onPinIconLoad(); } catch (e) { /* ignore */ } }
+    };
+    img.onerror = function () { pinIcons[key] = false; };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    return null;
+  };
 
   D.DEFAULT_SETTINGS = {
     units: 'imperial', coordFormat: 'dd', night: false, awake: true, highAccuracy: true,

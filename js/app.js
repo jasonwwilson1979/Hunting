@@ -15,6 +15,7 @@
     pendingMark: null,
     follow: true,
     measureOn: false,
+    pinMode: false,         // crosshair at the map centre; taps drop a waypoint
     pending: null,          // map being added
     calibPts: [],
     calibLayer: null,
@@ -30,6 +31,7 @@
     'btnSun', 'btnMenu', 'navTargetBar', 'navTargetArrow', 'navTargetName', 'navTargetDist',
     'btnNavClear', 'trackHud', 'trackDist', 'trackTime', 'trackPts', 'btnZoomIn', 'btnZoomOut',
     'btnLocate', 'btnCompass', 'btnMeasure', 'scaleLine', 'scaleText', 'attribution',
+    'btnPin', 'pinHud', 'pinCoords', 'pinFromYou', 'btnPinDrop', 'btnPinDone',
     'measureHud', 'measureTotal', 'btnMeasureUndo', 'btnMeasureClear', 'btnMeasureDone',
     'calibHud', 'btnCalibLeft', 'btnCalibRight', 'calibScale', 'calibScaleVal',
     'calibRotate', 'calibRotateVal', 'calibMeta', 'calibOpacityVal',
@@ -70,6 +72,7 @@
     map = new H.MapView(el.map, {
       onTap: onMapTap,
       onLongPress: onMapLongPress,
+      onPinTap: function (ll) { openMarkSheet(ll, 'tap'); },
       onUserPan: function () { S.defaultView = false; setFollow(false); },
       onCalibChange: function () { updateCalibReadout(); },
       onMeasure: onMeasureUpdate,
@@ -89,6 +92,7 @@
         D.saveSettings();
       }
       T.onError = onTileError;
+      D.onPinIconLoad = function () { if (map) map.invalidate(); };
       syncMap();
       renderAll();
       restoreView();
@@ -384,7 +388,13 @@
     });
     U.on(el.coordChip, 'click', function () { cycleCoordFormat(); });
 
-    U.on(el.btnMark, 'click', function () { openMarkSheet(null); });
+    U.on(el.btnMark, 'click', function () {
+      if (S.pinMode) { openMarkSheet(null, 'crosshair'); return; }
+      openMarkSheet(null);
+    });
+    U.on(el.btnPin, 'click', function () { togglePinMode(); });
+    U.on(el.btnPinDrop, 'click', function () { openMarkSheet(map.pinLatLon(), 'crosshair'); });
+    U.on(el.btnPinDone, 'click', function () { togglePinMode(false); });
     U.on(el.btnRec, 'click', function () { toggleRecording(); });
     U.on(el.btnWaypoints, 'click', function () { openSheet('sheetWaypoints'); });
     U.on(el.btnTools, 'click', function () { openSheet('sheetTools'); });
@@ -425,6 +435,7 @@
     if (!S.defaultView) saveViewSoon();
     updateCoordHud();
     updateTargetBar();
+    if (S.pinMode) updatePinHud();
   }
   const saveViewSoon = U.debounce(function () {
     const c = map.getCenterLatLon();
@@ -436,6 +447,7 @@
 
   function handleGps(st) {
     updateGpsHud(st);
+    if (S.pinMode) updatePinHud();
     if (st.lat != null) {
       const firstFix = !gpsSeen;
       gpsSeen = true;
@@ -624,6 +636,7 @@
   /* ------------------------------- measure ------------------------------- */
   function toggleMeasure(force) {
     S.measureOn = force == null ? !S.measureOn : !!force;
+    if (S.measureOn && S.pinMode) togglePinMode(false);
     map.measureOn = S.measureOn;
     if (!S.measureOn) map.measure = [];
     el.btnMeasure.classList.toggle('on', S.measureOn);
@@ -645,7 +658,37 @@
   }
 
   function onMapLongPress(ll) {
-    openMarkSheet(ll);
+    openMarkSheet(ll, 'tap');
+  }
+
+  /* ---------------------------- crosshair placement ---------------------------- */
+  function togglePinMode(force) {
+    S.pinMode = force == null ? !S.pinMode : !!force;
+    map.pinMode = S.pinMode;
+    document.body.classList.toggle('pinning', S.pinMode);
+    el.btnPin.classList.toggle('on', S.pinMode);
+    el.pinHud.hidden = !S.pinMode;
+    if (S.pinMode) {
+      setFollow(false);
+      updatePinHud();
+      U.toast('Drag the map to aim. Tap the map or press Drop waypoint.', 'ok', 3200);
+    }
+    map.invalidate();
+  }
+
+  function updatePinHud() {
+    if (!S.pinMode || !el.pinCoords) return;
+    const ll = map.pinLatLon();
+    el.pinCoords.textContent = G.formatCoord(ll.lat, ll.lon, D.settings.coordFormat);
+    const st = GPS.state;
+    if (st.lat != null && !GPS.isStale(180000)) {
+      const d = G.distance(st.lat, st.lon, ll.lat, ll.lon);
+      const brg = G.bearing(st.lat, st.lon, ll.lat, ll.lon);
+      el.pinFromYou.textContent = U.fmtDist(d) + ' \u00b7 ' + Math.round(brg) + '\u00b0 ' +
+        G.compassPoint(brg) + ' of you';
+    } else {
+      el.pinFromYou.textContent = 'no GPS fix yet';
+    }
   }
 
   /* Tiles refused by a provider (policy, key, quota): say so once per provider. */
@@ -669,9 +712,11 @@
       const info = D.TYPES[id];
       const b = U.el('button', {
         class: 'chip-btn' + (id === current ? ' on' : ''),
-        type: 'button', 'data-type': id
+        type: 'button', 'data-type': id, title: info.label
       });
-      b.appendChild(U.el('span', { class: 'dot', style: 'background:' + info.color }));
+      const badge = U.el('span', { class: 'chip-ic', style: 'background:' + info.color });
+      badge.appendChild(D.iconFor(id));
+      b.appendChild(badge);
       b.appendChild(document.createTextNode(info.label));
       b.addEventListener('click', function () {
         U.$$('.chip-btn', container).forEach(function (x) { x.classList.remove('on'); });
@@ -682,14 +727,28 @@
     });
   }
 
-  function openMarkSheet(ll) {
+  function openMarkSheet(ll, source) {
     const st = GPS.state;
+    const hasFix = st.lat != null && !GPS.isStale(120000);
     let lat, lon, how;
-    if (ll) { lat = ll.lat; lon = ll.lon; how = 'at the tapped point'; }
-    else if (st.lat != null && !GPS.isStale(120000)) { lat = st.lat; lon = st.lon; how = 'at your GPS position'; }
-    else {
+    if (ll) {
+      lat = ll.lat; lon = ll.lon;
+      how = source === 'crosshair' ? 'at the crosshair' : 'at the tapped point';
+    } else if (source === 'crosshair' || (S.pinMode && !hasFix)) {
+      const c = map.pinLatLon();
+      lat = c.lat; lon = c.lon;
+      how = 'at the crosshair (map centre)';
+    } else if (hasFix) {
+      lat = st.lat; lon = st.lon; how = 'at your GPS position';
+    } else {
       const c = map.getCenterLatLon();
       lat = c.lat; lon = c.lon; how = 'at the map centre (no GPS fix yet)';
+    }
+    // Say how far the pin is from you whenever it is not your own position.
+    if (hasFix && (Math.abs(lat - st.lat) > 1e-9 || Math.abs(lon - st.lon) > 1e-9)) {
+      const d = G.distance(st.lat, st.lon, lat, lon);
+      const brg = G.bearing(st.lat, st.lon, lat, lon);
+      how += ' \u00b7 ' + U.fmtDist(d) + ' ' + G.compassPoint(brg) + ' of you';
     }
     S.pendingMark = { lat: lat, lon: lon, accuracy: st.accuracy, how: how };
     S.markType = S.markType || 'stand';
@@ -719,6 +778,7 @@
       U.vibrate(20);
       U.toast('Saved "' + name + '"', 'ok');
       S.pendingMark = null;
+      if (S.pinMode) updatePinHud();
     });
   }
 
@@ -732,13 +792,15 @@
     if (!list.length) {
       el.wpList.appendChild(U.el('div', { class: 'empty',
         text: D.waypoints.length ? 'No spots match that search.' :
-          'No spots yet. Tap MARK to save a stand, blind, camera, water or kill site.' }));
+          'No spots yet. Tap MARK to save a stand, blind, cabin, deer, water or kill site.' }));
       return;
     }
     list.forEach(function (w) {
       const info = D.TYPES[w.type] || D.TYPES.wp;
       const row = U.el('button', { class: 'item', type: 'button' });
-      row.appendChild(U.el('span', { class: 'pin-mini', style: 'background:' + info.color, text: info.code }));
+      const pin = U.el('span', { class: 'pin-mini', style: 'background:' + info.color, title: info.label });
+      pin.appendChild(D.iconFor(w.type, 'wp-ic pin-ic'));
+      row.appendChild(pin);
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: w.name || 'Spot' }));
       const bits = [info.label, G.formatCoord(w.lat, w.lon, D.settings.coordFormat)];
@@ -767,7 +829,12 @@
     S.wptType = w.type;
     map.selectedId = w.id;
     map.invalidate();
-    el.wptTitle.textContent = w.name || 'Spot';
+    const info = D.TYPES[w.type] || D.TYPES.wp;
+    el.wptTitle.innerHTML = '';
+    const badge = U.el('span', { class: 'title-ic', style: 'background:' + info.color });
+    badge.appendChild(D.iconFor(w.type));
+    el.wptTitle.appendChild(badge);
+    el.wptTitle.appendChild(document.createTextNode(w.name || 'Spot'));
     el.wptName.value = w.name || '';
     el.wptNotes.value = w.notes || '';
     el.wptCoords.textContent = G.formatAll(w.lat, w.lon);

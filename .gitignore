@@ -13,6 +13,8 @@ tests/screenshots/*
 !tests/screenshots/06-align-sliders.png
 !tests/screenshots/07-sync-from-pc.png
 !tests/screenshots/08-airplane-mode.png
+!tests/screenshots/09-crosshair.png
+!tests/screenshots/10-spot-icons.png
 __pycache__/
 *.pyc
 

@@ -30,6 +30,7 @@
     this.position = null;        // {lat, lon, accuracy, heading, speed, alt}
     this.showLabels = true;
     this.showGrid = false;
+    this.pinMode = false;        // crosshair at the map centre; taps drop a waypoint
     this.follow = true;
     this.calibrateLayer = null;  // overlay being aligned by gesture
     this._dirty = false;
@@ -170,6 +171,7 @@
     this.drawWaypoints();
     this.drawTarget();
     this.drawPosition();
+    this.drawCrosshair();
     if (this.tilesEnabled && this._tileHits === 0 && this._tileMisses > 0) {
       this.drawNoTilesNotice();
     }
@@ -427,7 +429,7 @@
 
   P.setWaypoints = function (list) { this.waypoints = list || []; this.invalidate(); };
 
-  P.drawPin = function (x, y, color, code, selected) {
+  P.drawPin = function (x, y, color, code, selected, type) {
     const ctx = this.ctx;
     const r = selected ? 12 : 10;
     const cy = y - r * 1.9;
@@ -451,12 +453,19 @@
     ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,.55)';
     ctx.lineWidth = selected ? 2.5 : 1.4;
     ctx.stroke();
-    // code
-    ctx.fillStyle = '#10140c';
-    ctx.font = '800 ' + (r > 11 ? 10 : 9) + 'px -apple-system, system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(code, x, cy + 0.5);
+
+    const icon = (type && H.Data && H.Data.pinIcon) ? H.Data.pinIcon(type) : null;
+    if (icon) {
+      const size = r * 1.62;
+      ctx.drawImage(icon, x - size / 2, cy - size / 2, size, size);
+    } else {
+      // code, shown until the icon bitmap is ready (or if it cannot load)
+      ctx.fillStyle = '#10140c';
+      ctx.font = '800 ' + (r > 11 ? 10 : 9) + 'px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(code, x, cy + 0.5);
+    }
     ctx.restore();
   };
 
@@ -467,7 +476,7 @@
       const p = self.latLonToScreen(w.lat, w.lon);
       if (p.x < -70 || p.x > self.width + 70 || p.y < -70 || p.y > self.height + 70) return;
       const info = typeInfo(w);
-      self.drawPin(p.x, p.y, info.color, info.code, self.selectedId === w.id);
+      self.drawPin(p.x, p.y, info.color, info.code, self.selectedId === w.id, w.type);
       if (self.showLabels && w.name) {
         ctx.save();
         ctx.font = '600 11px -apple-system, system-ui, sans-serif';
@@ -607,6 +616,62 @@
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
     ctx.fillStyle = '#161a10';
+    ctx.fill();
+    ctx.restore();
+  };
+
+  /* ------------------------------ crosshair ------------------------------ */
+  /** Position the crosshair marks: the map centre. */
+  P.pinLatLon = function () { return this.getCenterLatLon(); };
+
+  P.drawCrosshair = function () {
+    if (!this.pinMode) return;
+    const ctx = this.ctx;
+    const x = this.width / 2, y = this.height / 2;
+    const accent = U.cssVar('--accent', '#e2801f');
+    ctx.save();
+
+    // soft shadow so the crosshair reads on both light paper maps and dark tiles
+    ctx.shadowColor = 'rgba(0,0,0,.55)';
+    ctx.shadowBlur = 3;
+
+    // gap cross: four arms pulled back from the centre
+    const inner = 9, outer = 26;
+    ctx.lineCap = 'butt';
+    const arms = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3.4;
+    arms.forEach(function (a) {
+      ctx.beginPath();
+      ctx.moveTo(x + a[0] * inner, y + a[1] * inner);
+      ctx.lineTo(x + a[0] * outer, y + a[1] * outer);
+      ctx.stroke();
+    });
+    ctx.strokeStyle = '#14180f';
+    ctx.lineWidth = 1.6;
+    arms.forEach(function (a) {
+      ctx.beginPath();
+      ctx.moveTo(x + a[0] * inner, y + a[1] * inner);
+      ctx.lineTo(x + a[0] * outer, y + a[1] * outer);
+      ctx.stroke();
+    });
+
+    // ring
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // centre dot
+    ctx.beginPath();
+    ctx.arc(x, y, 1.7, 0, Math.PI * 2);
+    ctx.fillStyle = accent;
     ctx.fill();
     ctx.restore();
   };
@@ -799,7 +864,12 @@
               if (self.opts.onTap) self.opts.onTap(ll, null);
             } else {
               const wp = self.hitTest(tap.x, tap.y);
-              if (self.opts.onTap) self.opts.onTap(ll, wp);
+              if (!wp && self.pinMode && self.opts.onPinTap) {
+                U.vibrate(12);
+                self.opts.onPinTap(ll);
+              } else if (self.opts.onTap) {
+                self.opts.onTap(ll, wp);
+              }
             }
           }
         }
