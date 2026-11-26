@@ -262,7 +262,7 @@ def api_health(request):
     return JsonResponse({
         "ok": True,
         "server": "huntmap",
-        "version": 1,
+        "version": 2,
         "maps": MapDocument.objects.count(),
     })
 

@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
@@ -132,7 +133,14 @@ def main():
             edited = page.evaluate("window.Hunt.Sync.state.maps.map(function (m) { return m.city; })")
             check("editing a map saves to the server", "Stockbridge" in edited, edited)
 
-            page.evaluate("document.getElementById('btnSyncSignIn').click()")
+            # Tools → Account
+            page.evaluate("document.getElementById('btnMenu').click()")
+            page.wait_for_timeout(600)
+            check("Tools shows the account card", page.is_visible("#accountBox"))
+            check("account card starts signed out",
+                  "Not signed in" in page.inner_text("#accountState"),
+                  page.inner_text("#accountState"))
+            page.evaluate("document.getElementById('btnAccountSignIn').click()")
             page.wait_for_timeout(600)
             page.fill("#signUser", "scout")
             page.fill("#signPass", "huntmap-pass-1")
@@ -140,14 +148,16 @@ def main():
             page.wait_for_timeout(1800)
             account = page.evaluate("""(() => ({
                 user: window.Hunt.Sync.state.user,
-                label: document.getElementById('syncUser').textContent,
-                rows: document.querySelectorAll('#syncList .item').length
+                card: document.getElementById('accountState').textContent,
+                rows: (window.Hunt.Sync.state.maps || []).length
             }))()""")
             check("creating a local account signs in", account["user"] == "scout", account)
-            check("panel shows the signed-in user", "scout" in account["label"], account["label"])
+            check("Tools account card shows the user", "scout" in account["card"], account["card"])
             check("shared maps stay visible to the new account", account["rows"] == 2, account)
+            page.evaluate("document.getElementById('scrim').click()")
+            page.wait_for_timeout(400)
 
-            page.evaluate("document.getElementById('btnSyncSignOut').click()")
+            page.evaluate("document.getElementById('btnAccountSignOut').click()")
             page.wait_for_timeout(1200)
             check("signing out clears the user",
                   page.evaluate("window.Hunt.Sync.state.user") is None,
@@ -247,6 +257,55 @@ def main():
             check("fresh phone reuses the PC georeference", second.get("calib") is True,
                   second.get("s"))
             ctx2.close()
+
+            # ---------------- upload on one device, sign in on another ----------------
+            page.evaluate("document.getElementById('btnMenu').click()")
+            page.wait_for_timeout(500)
+            page.evaluate("document.getElementById('btnAccountSignIn').click()")
+            page.wait_for_timeout(600)
+            page.fill("#signUser", "scout")
+            page.fill("#signPass", "huntmap-pass-1")
+            page.evaluate("document.getElementById('btnSignInGo').click()")
+            page.wait_for_timeout(2000)
+
+            upload = page.request.post(BASE + "/api/maps/", multipart={
+                "file": {"name": "phone-upload.pdf", "mimeType": "application/pdf",
+                         "buffer": Path(ROOT, "tests", "sample-topo-map.pdf").read_bytes()},
+                "name": "Phone Upload",
+                "state": "vermont",
+                "county": "windsor",
+                "city": "norwich",
+            })
+            uploaded = upload.json() if upload.ok else {}
+            check("a signed-in device can add a map to the library",
+                  upload.status == 201 and uploaded.get("owner") == "scout",
+                  (upload.status, uploaded.get("owner")))
+            check("the upload keeps its place",
+                  uploaded.get("place") == "Vermont \u00b7 Windsor \u00b7 Norwich",
+                  uploaded.get("place"))
+
+            ctx3 = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True,
+                                       has_touch=True, device_scale_factor=2,
+                                       geolocation={"latitude": 44.12, "longitude": -71.56},
+                                       permissions=["geolocation"])
+            page2 = ctx3.new_page()
+            page2.goto(BASE + "/", wait_until="load")
+            page2.wait_for_timeout(1800)
+            page2.evaluate("document.getElementById('btnMenu').click()")
+            page2.wait_for_timeout(500)
+            page2.evaluate("document.getElementById('btnAccountSignIn').click()")
+            page2.wait_for_timeout(600)
+            page2.fill("#signUser", "scout")
+            page2.fill("#signPass", "huntmap-pass-1")
+            page2.evaluate("document.getElementById('btnSignInGo').click()")
+            page2.wait_for_timeout(2200)
+            page2.evaluate("document.getElementById('btnLayers').click()")
+            page2.wait_for_timeout(1800)
+            seen = page2.inner_text("#syncList")
+            check("another device sees the uploaded map after signing in",
+                  "Phone Upload" in seen, seen[:200])
+            check("the other device sees its place too", "Vermont" in seen, seen[:200])
+            ctx3.close()
 
             check("no JS errors at the end", not errors, errors[:3])
             browser.close()

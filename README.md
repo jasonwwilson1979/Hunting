@@ -193,8 +193,9 @@ Accounts live in this server's database — no external service, no email confir
 
 - **On the PC:** `/accounts/register/` to create one, `/accounts/login/` to sign in,
   `/library/` shows *Signed in as …* and a **Sign out** button.
-- **On the phone:** *Maps → From your PC →* **Sign in** (same sheet has **Create account**). The
-  session cookie is stored by the browser, so the panel keeps showing your maps.
+- **On the phone:** open **Tools → Account** (top of the Tools sheet) → **Sign in**, or **Create
+  account** in the same sheet. The session cookie is stored by the browser, so the app stays signed
+  in and *From your PC* shows your maps.
 - **Ownership:** a map uploaded while signed in belongs to that account; the API only lists your
   own maps plus **shared** ones (uploaded by the admin or via `addmap`, i.e. no owner). Downloading
   someone else's file returns 404, and editing it returns 403.
@@ -506,6 +507,12 @@ Nothing is uploaded — everything is converted on the device.
 
 **Maps → Add PDF or image → Choose file** → pick the page (PDF only) and resolution → **Load map**.
 
+Before loading you can fill in **Name**, **State** (autocomplete for US states and Canadian
+provinces), **County** and **Town / city**. When you are signed in there is also **Copy to my PC
+library**: tick it and the original file is uploaded to your library, so a second PC or phone that
+signs in as you can download it from *From your PC* — the georeference you place here is pushed to
+the server too. Without the tick the map stays on this device only (nothing is uploaded).
+
 Resolution: 2000 px is fast, 3000 px is the default and fine for most 1:24,000 quads,
 4000 px is sharpest but slower and uses more memory.
 
@@ -737,13 +744,13 @@ moving, GPX round-trip, reload persistence, service worker, a full **offline rel
 map loaded through the UI, rotated 90°, georeferenced with a 5° fine rotation, and the align-bar
 sliders.
 
-`tests/e2e_django.py` (24 checks): Django serves the app, the PC library is listed with its place,
-**search / state filters**, **editing a map's details on the server**, **creating a local account**
-(panel shows *Signed in as …*, shared maps stay visible, sign-out clears it), the `/library/` page
-and its state filter, PDF + TIFF downloaded and stored, the phone's georeference uploaded to the
-PC, then with the network **off**: the app opens, both maps survive with their images, GPS reports
-a fix and the georeferenced map renders from storage. A second, fresh phone downloads the map and
-starts with the PC's georeference.
+`tests/e2e_django.py` (30 checks): Django serves the app, the PC library is listed with its place,
+**search / state filters**, **editing a map's details on the server**, the **Tools → Account** card
+(create account, shows the user, sign out), the `/library/` page and its state filter, PDF + TIFF
+downloaded and stored, the phone's georeference uploaded to the PC, then with the network **off**:
+the app opens, both maps survive with their images, GPS reports a fix and the georeferenced map
+renders from storage. A second, fresh phone downloads the map and starts with the PC's
+georeference, and a **map uploaded by one signed-in device shows up on another**.
 
 `server/maps/tests.py` (24 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,

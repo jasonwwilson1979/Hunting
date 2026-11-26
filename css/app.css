@@ -438,6 +438,15 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
 .sync-account { align-items: center; }
 .narrow-field { flex: 0 0 110px; }
 
+/* Tools → Account */
+.account-card {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin: 0 0 14px;
+}
+.account-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.account-name { flex: 1 1 auto; font-size: 13.5px; font-weight: 600; }
+.account-card .note { margin: 6px 0 0; }
+
 /* waypoint icons: same line art as the map pins */
 .wp-ic {
   fill: none; stroke: #10140c; stroke-width: 2.1;

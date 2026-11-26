@@ -44,7 +44,9 @@
     'btnTrackExport', 'btnTrackToggle', 'trackList', 'sheetLayers', 'providerList',
     'toggleTiles', 'overlayList', 'btnAddMap', 'btnRecalibrate', 'dlZoomMin', 'dlZoomMax',
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
-    'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnSyncSignIn', 'btnSyncSignOut',
+    'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
+    'accountState', 'accountNote', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
     'sheetSignIn', 'signUser', 'signPass', 'btnSignInGo', 'btnSignUpGo', 'signNote',
@@ -206,10 +208,10 @@
     if (el.syncUser) {
       el.syncUser.textContent = sync.state.user
         ? 'Signed in as ' + sync.state.user
-        : sync.state.requireAuth ? 'Sign in to see your maps' : 'Not signed in (shared library)';
+        : sync.state.requireAuth ? 'Sign in (Tools → Account) to see your maps'
+        : 'Not signed in \u2014 showing the shared library';
     }
-    if (el.btnSyncSignIn) el.btnSyncSignIn.hidden = !!sync.state.user;
-    if (el.btnSyncSignOut) el.btnSyncSignOut.hidden = !sync.state.user;
+    renderAccount();
 
     fillPlaceSelect(el.syncState, 'Any state', sync.state.places.states || [], sync.state.stateFilter);
     const counties = (sync.state.stateFilter &&
@@ -224,8 +226,12 @@
     el.syncCount.textContent = maps.length ? '(' + maps.length + ')' : '';
 
     const busyIds = Object.keys(sync.state.busy).filter(function (k) { return sync.state.busy[k]; });
+    const oldServer = sync.state.enabled && sync.state.serverVersion < 2;
     let status;
-    if (sync.state.error) {
+    if (oldServer) {
+      status = 'This server is older than the app \u2014 rebuild/redeploy it to get place fields, ' +
+        'search and accounts.';
+    } else if (sync.state.error) {
       status = sync.state.error === 'sign-in required'
         ? 'Sign in to list the maps on the server.'
         : 'Server problem: ' + sync.state.error;
@@ -319,6 +325,24 @@
       }
       el.syncList.appendChild(row);
     });
+  }
+
+  /** Tools → Account card: who is signed in, and the buttons that apply. */
+  function renderAccount() {
+    if (!el.accountState) return;
+    const sync = H.Sync || { state: {} };
+    const user = sync.state.user;
+    const hasServer = !!(sync.state && sync.state.enabled);
+    el.accountState.textContent = user
+      ? 'Signed in as ' + user
+      : hasServer ? 'Not signed in' : 'No HuntMap server on this address';
+    el.btnAccountSignIn.hidden = !!user;
+    el.btnAccountSignOut.hidden = !user;
+    el.accountNote.textContent = user
+      ? 'Your uploads belong to this account; maps without an owner are shared with everyone.'
+      : hasServer
+        ? 'Sign in to keep your map library separate and to upload maps from this phone. You can also create an account here.'
+        : 'Accounts live on the HuntMap server. Open the app from your server address (or the tunnel hostname) to sign in.';
   }
 
   function fillPlaceSelect(select, anyLabel, values, current) {
@@ -462,7 +486,7 @@
     if (id === 'sheetTracks') renderTracks();
     if (id === 'sheetSun') renderSun();
     if (id === 'sheetGps') renderGpsDetails();
-    if (id === 'sheetTools') refreshDiag();
+    if (id === 'sheetTools') { refreshDiag(); renderAccount(); }
   }
   App.openSheet = openSheet;
 
@@ -1297,6 +1321,18 @@
     el.mapProgressWrap.hidden = true;
     el.btnMapRender.disabled = true;
     el.fileMap.value = '';
+    el.mapName.value = '';
+    el.mapState.value = '';
+    el.mapCounty.value = '';
+    el.mapCity.value = '';
+    el.mapUploadChk.checked = false;
+    const sync = H.Sync;
+    const signedIn = !!(sync && sync.state.enabled && sync.state.user);
+    el.mapUploadBox.hidden = !signedIn;
+    if (signedIn) {
+      el.mapUploadNote.textContent = 'Signed in as ' + sync.state.user +
+        '. The original file is uploaded so your other devices can download it from From your PC.';
+    }
     openSheet('sheetAddMap');
   }
 
@@ -1372,11 +1408,16 @@
       p.baseHeight = res.height;
       p.rotation = 0;
       const layer = D.newLayer({
-        name: (p.file.name || 'Map').replace(/\.(pdf|jpe?g|png|heic|tiff?)$/i, ''),
+        name: (el.mapName.value || '').trim() ||
+          (p.file.name || 'Map').replace(/\.(pdf|jpe?g|png|heic|tiff?)$/i, ''),
         kind: p.kind,
         page: p.kind === 'pdf' ? parseInt(el.mapPage.value, 10) || 1 : 1,
         imgW: res.width, imgH: res.height
       });
+      layer.state = (el.mapState.value || '').trim();
+      layer.county = (el.mapCounty.value || '').trim();
+      layer.city = (el.mapCity.value || '').trim();
+      p.uploadRequested = !el.mapUploadBox.hidden && el.mapUploadChk.checked;
       return DB.blobSet('mapimg:' + layer.id, res.blob).then(function () { return layer; });
     }).then(function (layer) {
       p.layer = layer;
@@ -1696,8 +1737,39 @@
       if (b) map.fitBounds(b, 30);
       closeSheets();
       renderOverlays();
+      const p = S.pending;
       S.pending = null;
-      if (H.Sync) H.Sync.pushCalibration(layer);
+      if (H.Sync) {
+        if (p && p.uploadRequested) {
+          // The user asked to keep a copy on the server: upload the original file
+          // first, then share the georeference, so other devices get both.
+          H.Sync.upload(p.file, {
+            name: layer.name,
+            page: layer.page,
+            state: layer.state,
+            county: layer.county,
+            city: layer.city
+          }).then(function (json) {
+            layer.remoteId = json.id;
+            layer.remoteUpdated = json.updated;
+            layer.remoteSha = json.sha256 || '';
+            layer.state = json.state || layer.state;
+            layer.county = json.county || layer.county;
+            layer.city = json.city || layer.city;
+            return D.saveLayer(layer);
+          }).then(function () {
+            U.toast('Copied to your library on the PC', 'ok', 2600);
+            H.Sync.pushCalibration(layer);
+            H.Sync.probe();
+          }).catch(function (err) {
+            U.toast(err && err.status === 401 || err && err.status === 403
+              ? 'Sign in (Tools \u2192 Account) to upload to your library'
+              : 'Upload to the library failed: ' + ((err && err.message) || err), 'err', 4200);
+          });
+        } else {
+          H.Sync.pushCalibration(layer);
+        }
+      }
       U.toast('Map georeferenced \u00b7 ' + U.fmtDist(PM.metersPerPixel(layer.calib) * 1000) + '/1000 px', 'ok', 3200);
     });
   }
@@ -2239,13 +2311,13 @@
       H.Sync.state.countyFilter = el.syncCounty.value || '';
       renderSync();
     });
-    U.on(el.btnSyncSignIn, 'click', function () {
+    U.on(el.btnAccountSignIn, 'click', function () {
       el.signNote.textContent = 'A new account needs a password of at least 8 characters. ' +
         'The library keeps your maps separate; maps without an owner stay shared.';
       openSheet('sheetSignIn');
       el.signUser.focus();
     });
-    U.on(el.btnSyncSignOut, 'click', function () {
+    U.on(el.btnAccountSignOut, 'click', function () {
       if (!H.Sync) return;
       H.Sync.logout().then(function () {
         U.toast('Signed out', 'ok');

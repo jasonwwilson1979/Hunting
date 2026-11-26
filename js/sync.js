@@ -17,7 +17,7 @@
   SY.base = 'api/';
   SY.state = {
     enabled: false, maps: [], places: { states: [], counties: [], cities: [] },
-    user: null, requireAuth: false, error: null, busy: {}, lastCheck: 0,
+    user: null, requireAuth: false, serverVersion: 0, error: null, busy: {}, lastCheck: 0,
     q: '', stateFilter: '', countyFilter: ''
   };
   SY.onChange = null;
@@ -93,6 +93,31 @@
     });
   };
 
+  /** Upload a map file from the phone into the server library. */
+  SY.upload = function (file, meta) {
+    meta = meta || {};
+    const form = new FormData();
+    form.append('file', file, file.name || 'map.pdf');
+    form.append('name', meta.name || (file.name || 'Map').replace(/\.[^.]+$/, ''));
+    if (meta.page) form.append('page', String(meta.page));
+    ['state', 'county', 'city', 'notes'].forEach(function (key) {
+      if (meta[key]) form.append(key, meta[key]);
+    });
+    return fetch(SY.base + 'maps/', {
+      method: 'POST',
+      body: form,
+      credentials: 'same-origin',
+      cache: 'no-store'
+    }).then(function (res) {
+      if (!res.ok) {
+        const err = new Error('HTTP ' + res.status);
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    });
+  };
+
   /** The maps that pass the panel's search / state / county filters. */
   SY.filtered = function () {
     const q = (SY.state.q || '').trim().toLowerCase();
@@ -128,6 +153,7 @@
       SY.state.places = (json && json.places) || { states: [], counties: [], cities: [] };
       SY.state.user = (json && json.user) || null;
       SY.state.requireAuth = !!(json && json.require_auth);
+      SY.state.serverVersion = (json && json.version) || 1;
       SY.state.error = null;
       SY.state.lastCheck = Date.now();
       notify();

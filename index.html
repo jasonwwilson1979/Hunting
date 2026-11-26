@@ -278,11 +278,7 @@
 
     <div id="syncSection" hidden>
       <h3 class="group-title">From your PC <span class="count" id="syncCount"></span></h3>
-      <div class="row gap wrap sync-account">
-        <span class="muted small grow" id="syncUser">Not signed in</span>
-        <button class="btn" id="btnSyncSignIn" type="button">Sign in</button>
-        <button class="btn" id="btnSyncSignOut" type="button" hidden>Sign out</button>
-      </div>
+      <p class="muted small" id="syncUser">Not signed in</p>
       <div class="filters">
         <input type="search" id="syncSearch" placeholder="Search maps, place…" autocomplete="off">
         <select id="syncState" aria-label="Filter by state"><option value="">Any state</option></select>
@@ -336,6 +332,16 @@
     <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
   </header>
   <div class="sheet-body">
+    <div class="account-card" id="accountBox">
+      <div class="account-row">
+        <span class="account-name" id="accountState">Not signed in</span>
+        <button class="btn" id="btnAccountSignIn" type="button">Sign in</button>
+        <button class="btn" id="btnAccountSignOut" type="button" hidden>Sign out</button>
+      </div>
+      <p class="note small" id="accountNote">Local accounts on your own HuntMap server: sign in to
+        keep your map library separate and to upload maps from this phone.</p>
+    </div>
+
     <div class="tool-grid">
       <button class="tool-btn" id="btnOpenSun" type="button"><svg class="i"><use href="#i-sun"/></svg><span>Sun &amp; moon</span></button>
       <button class="tool-btn" id="btnOpenCompass" type="button"><svg class="i"><use href="#i-compass"/></svg><span>Compass</span></button>
@@ -467,8 +473,29 @@
         <option value="100000">1:100,000</option>
       </select>
     </label>
+    <div class="row gap">
+      <label class="field grow"><span>Name <em class="muted small">(library only)</em></span>
+        <input type="text" id="mapName" autocomplete="off" placeholder="e.g. Elm Ridge 1:24000"></label>
+    </div>
+    <div class="row gap">
+      <label class="field grow"><span>State</span>
+        <input type="text" id="mapState" autocomplete="off" list="us-states" placeholder="Vermont"></label>
+      <label class="field grow"><span>County</span>
+        <input type="text" id="mapCounty" autocomplete="off" placeholder="Rutland"></label>
+    </div>
+    <label class="field"><span>Town / city</span>
+      <input type="text" id="mapCity" autocomplete="off" placeholder="Killington"></label>
+
+    <div id="mapUploadBox" hidden>
+      <label class="row-field"><span>Copy to my PC library</span>
+        <input type="checkbox" id="mapUploadChk"></label>
+      <p class="note small" id="mapUploadNote">Signed in as — the original file is uploaded so your
+        other devices can download it from <b>From your PC</b>.</p>
+    </div>
+
     <p class="muted small">PDF pages, TIFF scans (including compressed/multi-page TIFF, first page) and photos are
-      converted to an image on this device &mdash; nothing is uploaded. You can rotate the image after it loads.</p>
+      converted to an image on this device &mdash; nothing is uploaded unless you tick the box above. You
+      can rotate the image after it loads.</p>
     <button class="btn primary wide" id="btnMapRender" type="button" disabled><svg class="i"><use href="#i-map"/></svg> Load map</button>
     <div class="progress" id="mapProgressWrap" hidden><div class="progress-bar" id="mapBar"></div></div>
     <p class="muted small" id="mapStatus"></p>
@@ -567,6 +594,27 @@
 </div>
 
 <div class="toasts" id="toasts"></div>
+
+<datalist id="us-states">
+  <option value="Alabama"><option value="Alaska"><option value="Arizona"><option value="Arkansas">
+  <option value="California"><option value="Colorado"><option value="Connecticut"><option value="Delaware">
+  <option value="District of Columbia"><option value="Florida"><option value="Georgia"><option value="Hawaii">
+  <option value="Idaho"><option value="Illinois"><option value="Indiana"><option value="Iowa">
+  <option value="Kansas"><option value="Kentucky"><option value="Louisiana"><option value="Maine">
+  <option value="Maryland"><option value="Massachusetts"><option value="Michigan"><option value="Minnesota">
+  <option value="Mississippi"><option value="Missouri"><option value="Montana"><option value="Nebraska">
+  <option value="Nevada"><option value="New Hampshire"><option value="New Jersey"><option value="New Mexico">
+  <option value="New York"><option value="North Carolina"><option value="North Dakota"><option value="Ohio">
+  <option value="Oklahoma"><option value="Oregon"><option value="Pennsylvania"><option value="Rhode Island">
+  <option value="South Carolina"><option value="South Dakota"><option value="Tennessee"><option value="Texas">
+  <option value="Utah"><option value="Vermont"><option value="Virginia"><option value="Washington">
+  <option value="West Virginia"><option value="Wisconsin"><option value="Wyoming">
+  <option value="Alberta"><option value="British Columbia"><option value="Manitoba">
+  <option value="New Brunswick"><option value="Newfoundland and Labrador"><option value="Nova Scotia">
+  <option value="Ontario"><option value="Prince Edward Island"><option value="Quebec">
+  <option value="Saskatchewan"><option value="Northwest Territories"><option value="Nunavut">
+  <option value="Yukon">
+</datalist>
 
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="vendor/pako/pako.min.js"></script>
