@@ -6,6 +6,10 @@ Run the HuntMap Django server on your LAN.
     python3 server/serve.py --http          # http://<lan-ip>:8000   (PC only)
     python3 server/serve.py --port 9443
 
+The same names as in the container work from the environment; flags win:
+
+    HUNTMAP_PORT=9443 HUNTMAP_BIND=127.0.0.1 HUNTMAP_HTTPS=0 python3 server/serve.py
+
 iOS only gives web pages GPS and service workers over HTTPS, so HTTPS is the
 default here. A self-signed certificate is created in server/.certs on first
 run; accept it once on the phone (Safari: Show Details -> visit this website).
@@ -79,9 +83,11 @@ def make_cert(ip):
 
 def main():
     parser = argparse.ArgumentParser(description="Serve HuntMap (Django) on the LAN")
-    parser.add_argument("--port", type=int, default=None, help="default 8443 (https) / 8000 (http)")
-    parser.add_argument("--bind", default="0.0.0.0")
-    parser.add_argument("--http", action="store_true", help="plain HTTP (no GPS on iOS)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("HUNTMAP_PORT") or 0) or None,
+                        help="default: $HUNTMAP_PORT, else 8443 (https) / 8000 (http)")
+    parser.add_argument("--bind", default=os.environ.get("HUNTMAP_BIND") or "0.0.0.0")
+    parser.add_argument("--http", action="store_true", default=os.environ.get("HUNTMAP_HTTPS") == "0",
+                        help="plain HTTP (no GPS on iOS); also HUNTMAP_HTTPS=0")
     parser.add_argument("--no-migrate", action="store_true", help="skip the migrate step")
     args = parser.parse_args()
 

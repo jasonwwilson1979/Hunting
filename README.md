@@ -140,7 +140,8 @@ draw and the GPS dot moves (the first fix can take 30–120 s without network as
 ### Server options and API
 
 `server/serve.py` flags: `--http` (PC only — iOS blocks GPS on http LAN), `--port`, `--bind`,
-`--no-migrate`.
+`--no-migrate`. The port, bind address and TLS mode can also come from `HUNTMAP_PORT`,
+`HUNTMAP_BIND` and `HUNTMAP_HTTPS` (flags win), so the same settings work with and without Docker.
 
 | Environment variable | Meaning |
 | --- | --- |
@@ -172,6 +173,9 @@ can build it straight from your GitHub repo.
 | Compose path | `docker-compose.yml` |
 | Environment variables | `HUNTMAP_SECRET_KEY`, `HUNTMAP_ADMIN_PASSWORD` (see below) |
 
+All variables and their defaults are in `.env.example`; copy it to `.env` next to the compose file
+(or paste the keys into Portainer) and edit what you need.
+
 Press **Deploy the stack**. Portainer clones the repo, builds the image and starts one
 container. Open `https://<docker-host>:8443/` — the certificate is self-signed, so accept it
 once on each device, then *Add to Home Screen*.
@@ -182,8 +186,11 @@ once on each device, then *Add to Home Screen*.
 | `HUNTMAP_ADMIN_USER` / `HUNTMAP_ADMIN_PASSWORD` | `admin` / `huntmap` | Created on first start; `/upload/` and `/admin/` login. |
 | `HUNTMAP_CERT_SAN` | `DNS:localhost,IP:127.0.0.1` | Add your address, e.g. `IP:192.168.1.50`. |
 | `HUNTMAP_HOSTS` | `*` | Django `ALLOWED_HOSTS`, comma separated. Loopback stays allowed for health probes. |
-| `HUNTMAP_PUBLISH_PORT` | `8443` | Host port in front of the container's 8443. |
-| `HUNTMAP_HTTPS` | `1` | `0` = plain HTTP on 8000 (use behind your own TLS proxy or Cloudflare Tunnel). |
+| `HUNTMAP_PUBLISH_PORT` | `8443` | Port on the Docker host you open in the browser. |
+| `HUNTMAP_PORT` | `8443` (`8000` when `HUNTMAP_HTTPS=0`) | Port inside the container. The compose mapping and the healthcheck follow it. |
+| `HUNTMAP_BIND` | `0.0.0.0` | Interface gunicorn/`serve.py` binds. Leave it unless a local proxy needs `127.0.0.1`. |
+| `HUNTMAP_LAN_PORT` | unset | Tunnel stack only: host port for optional LAN access (see below). |
+| `HUNTMAP_HTTPS` | `1` | `0` = plain HTTP (use behind your own TLS proxy or Cloudflare Tunnel). |
 | `HUNTMAP_PROXY_SSL` / `HUNTMAP_FORWARDED_HOST` | off | Set to `1` behind Caddy/NPM/Traefik/Cloudflare. |
 | `HUNTMAP_MAX_UPLOAD` | `314572800` (300 MB) | Largest accepted map file; Cloudflare allows 100 MB. |
 | `HUNTMAP_TOKEN` | empty | If set, uploads and calibration writes need `X-HuntMap-Token`. |
@@ -193,6 +200,39 @@ Data lives in the named volume **`huntmap-data`** (`/data` inside the container;
 it with the stack name, e.g. `huntmap_huntmap-data`): `db.sqlite3`, uploaded maps in `media/`, and
 the TLS certificate in `certs/`. Portainer can browse, back up and restore that volume from
 *Volumes*.
+
+**Changing ports.** `.env.example` lists every variable; copy it to `.env` next to
+`docker-compose.yml` (git ignores `.env`) or paste the keys into Portainer's environment editor.
+
+```bash
+# 8443 is taken on the host -> publish on 9443, nothing else changes
+HUNTMAP_PUBLISH_PORT=9443
+
+# Move the server itself (proxy or firewall expects 9444)
+HUNTMAP_PORT=9444
+HUNTMAP_PUBLISH_PORT=9444     # the mapping follows, or leave it as 9443/9444
+
+# Plain HTTP for a local reverse proxy, on 9000
+HUNTMAP_HTTPS=0
+HUNTMAP_PORT=9000
+HUNTMAP_PUBLISH_PORT=9000
+HUNTMAP_PROXY_SSL=1
+HUNTMAP_FORWARDED_HOST=1
+```
+
+| Variable | Meaning | Must match |
+| --- | --- | --- |
+| `HUNTMAP_PUBLISH_PORT` | host port (`docker-compose.yml`) | the URL you open |
+| `HUNTMAP_PORT` | server port inside the container | the right-hand side of the port mapping, the tunnel's Public Hostname, and any reverse-proxy upstream |
+| `HUNTMAP_BIND` | interface inside the container | leave `0.0.0.0`; `127.0.0.1` makes the published port and the tunnel unreachable |
+
+The healthcheck reads `HUNTMAP_PORT`, so a custom port is still reported correctly; outside Docker
+the same variables work for the dev servers:
+
+```bash
+HUNTMAP_PORT=9443 HUNTMAP_HTTPS=1 python3 serve.py
+HUNTMAP_PORT=9443 python3 server/serve.py
+```
 
 **Automatic updates (optional).** Push the repo to GitHub and the workflow in
 `.github/workflows/docker.yml` builds a multi-arch image and publishes it to
@@ -227,7 +267,7 @@ a `cloudflared` sidecar on an internal network — no ports are published.
 
 1. **Cloudflare → Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared → Docker** and
    copy the token from the shown command.
-2. **Public hostname** for that tunnel:
+2. **Public hostname** for that tunnel (the port must equal `HUNTMAP_PORT`, default `8000`):
 
    | Field | Value |
    | --- | --- |
@@ -259,7 +299,7 @@ The stack sets what a TLS-terminating proxy needs:
 | Setting | Value | Why |
 | --- | --- | --- |
 | `HUNTMAP_HTTPS` | `0` | Cloudflare does TLS; gunicorn speaks plain HTTP. |
-| `HUNTMAP_PORT` | `8000` | Port gunicorn binds (and the healthcheck probes). |
+| `HUNTMAP_PORT` | `8000` | Port gunicorn binds; must match the tunnel's Public Hostname. |
 | `HUNTMAP_PROXY_SSL` | `1` | Trust `X-Forwarded-Proto: https`, else Django thinks the request is http. |
 | `HUNTMAP_FORWARDED_HOST` | `1` | Trust `X-Forwarded-Host`, so `file_url` in the API carries the public name. |
 | `HUNTMAP_HOSTS` | `huntmap.example.com` | Pins `ALLOWED_HOSTS`; `127.0.0.1`/`localhost` stay allowed for the healthcheck. |
@@ -279,8 +319,9 @@ Cloudflare dashboard settings that matter:
   the login page instead of data (offline use and GPS are unaffected). Use a long session
   (*Access → Applications → Session duration*, e.g. 1 month), or skip Access and rely on
   `HUNTMAP_TOKEN` for writes plus an unguessable hostname for reads.
-- **Uploads over 100 MB** are rejected by Cloudflare. Temporarily add `ports: ["8000:8000"]` to the
-  stack and upload from a machine on your LAN, or export a smaller scan.
+- **Uploads over 100 MB** are rejected by Cloudflare. Uncomment the `ports:` block in
+  `docker-compose.cloudflare.yml`, set `HUNTMAP_LAN_PORT=8000`, redeploy, and upload from a machine
+  on your LAN (`http://<docker-host>:8000/upload/`); or export a smaller scan.
 
 **Command line equivalent**
 
@@ -489,6 +530,7 @@ vendor/utif/               UTIF 3.1.0 TIFF decoder (MIT)
 vendor/pako/               pako 2.1.0 zlib for Deflate TIFFs (MIT)
 serve.py                   local HTTP/HTTPS server for the static app
 Dockerfile                 container image: app + Django, HTTPS, healthcheck
+.env.example               every environment variable (ports, TLS, secrets) with defaults
 docker-compose.yml         Portainer/compose stack (builds from this repo)
 docker-compose.ghcr.yml    stack for the prebuilt GHCR image
 docker-compose.cloudflare.yml  stack for Cloudflare Tunnel (app + cloudflared, no TLS inside)
@@ -540,12 +582,14 @@ the PC's georeference.
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency.
 
-`tests/e2e_docker.sh` (21 checks, two container modes): builds the image, starts the HTTPS
+`tests/e2e_docker.sh` (25 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,
 that private files are hidden and `/upload/` needs a login, uploads a map through the API,
 downloads it again, restarts and confirms map + admin survived the volume; then starts a second
 container in "TLS terminated upstream" mode (pinned host name, `X-Forwarded-Proto/Host`) and checks
-it goes healthy, serves plain HTTP, accepts an upload and returns `file_url` on the public origin.
+it goes healthy, serves plain HTTP, accepts an upload and returns `file_url` on the public origin;
+finally starts a third container on a custom port (`HUNTMAP_PORT=9443`, published as 19443) and
+checks gunicorn binds it and the healthcheck still passes.
 
 There is also an in-app self-test: **Tools → Run self-test** (geometry, UTM, sun, GPX,
 storage, PDF engine, TIFF decoder, calibration rotation).

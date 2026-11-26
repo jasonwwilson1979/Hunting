@@ -44,7 +44,7 @@ RUN useradd --uid 10001 --user-group --create-home --shell /usr/sbin/nologin hun
 USER huntmap
 WORKDIR /srv/huntmap/server
 
-EXPOSE 8443
+EXPOSE 8443 8000
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

@@ -11,7 +11,8 @@ services:
     container_name: huntmap
     restart: unless-stopped
     ports:
-      - "${HUNTMAP_PUBLISH_PORT:-8443}:8443"
+      # host:container — the container side follows HUNTMAP_PORT
+      - "${HUNTMAP_PUBLISH_PORT:-8443}:${HUNTMAP_PORT:-8443}"
     environment:
       HUNTMAP_SECRET_KEY: "${HUNTMAP_SECRET_KEY:-change-me-to-a-long-random-string}"
       HUNTMAP_ADMIN_USER: "${HUNTMAP_ADMIN_USER:-admin}"
@@ -19,7 +20,12 @@ services:
       HUNTMAP_ADMIN_EMAIL: "${HUNTMAP_ADMIN_EMAIL:-}"
       HUNTMAP_HOSTS: "${HUNTMAP_HOSTS:-*}"
       HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
+      HUNTMAP_HTTPS: "${HUNTMAP_HTTPS:-1}"
+      HUNTMAP_PORT: "${HUNTMAP_PORT:-8443}"
+      HUNTMAP_BIND: "${HUNTMAP_BIND:-0.0.0.0}"
       HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
+      HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
+      HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
     volumes:
       - huntmap-data:/data
 

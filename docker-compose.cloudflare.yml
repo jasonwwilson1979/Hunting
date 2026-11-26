@@ -35,7 +35,9 @@ services:
       HUNTMAP_TZ: "${HUNTMAP_TZ:-UTC}"
       # --- TLS ends at Cloudflare ---
       HUNTMAP_HTTPS: "0"
-      HUNTMAP_PORT: "8000"
+      # Port gunicorn binds; the tunnel's Public Hostname must use the same one.
+      HUNTMAP_PORT: "${HUNTMAP_PORT:-8000}"
+      HUNTMAP_BIND: "${HUNTMAP_BIND:-0.0.0.0}"
       HUNTMAP_PROXY_SSL: "1"
       HUNTMAP_FORWARDED_HOST: "1"
       # Cloudflare accepts ~100 MB request bodies (Free/Pro/Business).
@@ -44,7 +46,10 @@ services:
       HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
     volumes:
       - huntmap-data:/data
-    # No published ports: only the tunnel reaches it.
+    # No published ports: only the tunnel reaches it. To reach it on the LAN as
+    # well (e.g. to upload a scan Cloudflare's 100 MB limit rejects), uncomment:
+    # ports:
+    #   - "${HUNTMAP_LAN_PORT:-8000}:${HUNTMAP_PORT:-8000}"
 
   cloudflared:
     image: cloudflare/cloudflared:latest

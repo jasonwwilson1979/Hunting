@@ -37,7 +37,7 @@ def main():
 
     os.makedirs(SHOTS, exist_ok=True)
     server = subprocess.Popen(
-        [sys.executable, os.path.join(ROOT, "serve.py"), "--port", str(PORT), "--bind", "127.0.0.1"],
+        [sys.executable, os.path.join(ROOT, "serve.py"), "--http", "--port", str(PORT), "--bind", "127.0.0.1"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     try:

@@ -42,6 +42,7 @@ fi
 WORKERS="${HUNTMAP_WORKERS:-1}"
 THREADS="${HUNTMAP_THREADS:-8}"
 TIMEOUT="${HUNTMAP_TIMEOUT:-180}"
+BIND="${HUNTMAP_BIND:-0.0.0.0}"
 
 if [ "$USE_TLS" = "1" ]; then
   if [ ! -s "$CERT_DIR/cert.pem" ] || [ ! -s "$CERT_DIR/key.pem" ]; then
@@ -52,16 +53,16 @@ if [ "$USE_TLS" = "1" ]; then
       -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
       -subj "/CN=huntmap.local" -addext "subjectAltName=$SAN" >/dev/null 2>&1
   fi
-  log "HuntMap HTTPS on 0.0.0.0:$PORT"
+  log "HuntMap HTTPS on $BIND:$PORT"
   exec gunicorn huntmap_server.wsgi:application \
-    --bind "0.0.0.0:$PORT" \
+    --bind "$BIND:$PORT" \
     --workers "$WORKERS" --threads "$THREADS" --timeout "$TIMEOUT" \
     --access-logfile - --error-logfile - \
     --certfile "$CERT_DIR/cert.pem" --keyfile "$CERT_DIR/key.pem"
 fi
 
-log "HuntMap HTTP on 0.0.0.0:$PORT (put a TLS proxy in front for iPhone GPS)"
+log "HuntMap HTTP on $BIND:$PORT (put a TLS proxy in front for iPhone GPS)"
 exec gunicorn huntmap_server.wsgi:application \
-  --bind "0.0.0.0:$PORT" \
+  --bind "$BIND:$PORT" \
   --workers "$WORKERS" --threads "$THREADS" --timeout "$TIMEOUT" \
   --access-logfile - --error-logfile -

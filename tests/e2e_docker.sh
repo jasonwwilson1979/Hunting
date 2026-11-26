@@ -9,6 +9,7 @@
 # Phase 1: HTTPS container (the default self-signed setup).
 # Phase 2: TLS terminated upstream (Cloudflare Tunnel / reverse proxy):
 #          plain HTTP inside, X-Forwarded-Proto/Host trusted, pinned host name.
+# Phase 3: custom ports via HUNTMAP_PORT / HUNTMAP_PUBLISH_PORT.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,6 +23,10 @@ PROXY_VOLUME="${PROXY_NAME}-data"
 PROXY_PORT="${PROXY_PORT:-18444}"
 PROXY_BASE="http://127.0.0.1:${PROXY_PORT}"
 PROXY_HOST="hunt.example.com"
+CUSTOM_NAME="${NAME}-ports"
+CUSTOM_VOLUME="${CUSTOM_NAME}-data"
+CUSTOM_PORT="${CUSTOM_PORT:-19443}"      # published on the host
+CUSTOM_INNER="${CUSTOM_INNER:-9443}"     # HUNTMAP_PORT inside the container
 
 failures=0
 check() { if [ "$2" -eq 0 ]; then echo "PASS  $1"; else echo "FAIL  $1"; failures=$((failures + 1)); fi; }
@@ -30,8 +35,8 @@ app() { curl -s --max-time 60 -H "Host: ${PROXY_HOST}" -H 'X-Forwarded-Proto: ht
 
 cleanup() {
   if [ "${KEEP:-0}" != "1" ]; then
-    docker rm -f "$NAME" "$PROXY_NAME" >/dev/null 2>&1 || true
-    docker volume rm "$VOLUME" "$PROXY_VOLUME" >/dev/null 2>&1 || true
+    docker rm -f "$NAME" "$PROXY_NAME" "$CUSTOM_NAME" >/dev/null 2>&1 || true
+    docker volume rm "$VOLUME" "$PROXY_VOLUME" "$CUSTOM_VOLUME" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -52,8 +57,8 @@ docker build -q -t "$IMAGE" "$ROOT" >/dev/null
 check "image builds" $?
 
 cleanup_reset() {
-  docker rm -f "$NAME" "$PROXY_NAME" >/dev/null 2>&1 || true
-  docker volume rm "$VOLUME" "$PROXY_VOLUME" >/dev/null 2>&1 || true
+  docker rm -f "$NAME" "$PROXY_NAME" "$CUSTOM_NAME" >/dev/null 2>&1 || true
+  docker volume rm "$VOLUME" "$PROXY_VOLUME" "$CUSTOM_VOLUME" >/dev/null 2>&1 || true
 }
 cleanup_reset
 
@@ -121,14 +126,34 @@ check "file_url uses the public https origin" \
 check "upload page redirects to login" \
   "$(app -o /dev/null -w '%{redirect_url}' "$PROXY_BASE/upload/" | grep -q '/admin/login/?next=/upload/'; echo $?)"
 
+echo "== phase 3: custom ports (HUNTMAP_PORT=$CUSTOM_INNER, host $CUSTOM_PORT)"
+docker run -d --name "$CUSTOM_NAME" \
+  -p "127.0.0.1:${CUSTOM_PORT}:${CUSTOM_INNER}" \
+  -e HUNTMAP_SECRET_KEY=e2e-secret-key \
+  -e HUNTMAP_ADMIN_PASSWORD=e2e-password \
+  -e 'HUNTMAP_HOSTS=*' \
+  -e HUNTMAP_HTTPS=1 \
+  -e "HUNTMAP_PORT=${CUSTOM_INNER}" \
+  -v "${CUSTOM_VOLUME}:/data" \
+  "$IMAGE" >/dev/null
+check "custom-port container starts" $?
+
+status="$(wait_healthy "$CUSTOM_NAME")"
+check "healthy on container port ${CUSTOM_INNER} ($status)" "$([ "$status" = healthy ]; echo $?)"
+check "reachable on host port ${CUSTOM_PORT}" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:${CUSTOM_PORT}/api/health/" | grep -qx 200; echo $?)"
+check "gunicorn bound to ${CUSTOM_INNER} (not the default)" \
+  "$(docker logs "$CUSTOM_NAME" 2>&1 | grep -q "HTTPS on 0.0.0.0:${CUSTOM_INNER}"; echo $?)"
+
 echo
 if [ "$failures" -eq 0 ]; then
-  echo "All container checks passed (21 checks)."
-  [ "${KEEP:-0}" = "1" ] && echo "Containers left running: $BASE/ and $PROXY_BASE/"
+  echo "All container checks passed (25 checks)."
+  [ "${KEEP:-0}" = "1" ] && echo "Containers left running: $BASE/, $PROXY_BASE/, https://127.0.0.1:${CUSTOM_PORT}/"
 else
   echo "$failures container check(s) failed."
   docker logs "$NAME" 2>&1 | tail -15
   docker logs "$PROXY_NAME" 2>&1 | tail -15
+  docker logs "$CUSTOM_NAME" 2>&1 | tail -15
 fi
 exit "$failures"
 

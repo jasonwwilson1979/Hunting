@@ -10,6 +10,11 @@ run this with --https and accept the self-signed certificate once.
     python3 serve.py --https          # https on all interfaces, for the phone
     python3 serve.py --https --port 8443
 
+Port, bind address and TLS can also come from the environment (same names the
+container uses), and command line flags still win:
+
+    HUNTMAP_PORT=9443 HUNTMAP_BIND=127.0.0.1 HUNTMAP_HTTPS=1 python3 serve.py
+
 Self-signed certificates are created in .certs/ with openssl on first run.
 """
 import argparse
@@ -82,9 +87,12 @@ def make_cert():
 
 def main():
     ap = argparse.ArgumentParser(description="Serve HuntMap locally")
-    ap.add_argument("--port", type=int, default=8080)
-    ap.add_argument("--https", action="store_true", help="serve HTTPS (needed for phone GPS)")
-    ap.add_argument("--bind", default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("HUNTMAP_PORT") or 0) or 8080,
+                    help="default: $HUNTMAP_PORT, else 8080")
+    ap.add_argument("--https", action="store_true", default=os.environ.get("HUNTMAP_HTTPS") == "1",
+                    help="serve HTTPS (needed for phone GPS); also HUNTMAP_HTTPS=1")
+    ap.add_argument("--http", dest="https", action="store_false", help="force plain HTTP")
+    ap.add_argument("--bind", default=os.environ.get("HUNTMAP_BIND") or "0.0.0.0")
     args = ap.parse_args()
 
     server = http.server.ThreadingHTTPServer((args.bind, args.port), Handler)
