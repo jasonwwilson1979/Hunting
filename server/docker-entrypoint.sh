@@ -39,6 +39,21 @@ else
   log "  docker exec -it <container> python manage.py createsuperuser"
 fi
 
+# Say plainly whether anybody can log in - the usual "I cannot sign in" cause.
+staff_count="$(python manage.py shell -c \
+  "from django.contrib.auth import get_user_model as g; print(g().objects.filter(is_active=True, is_staff=True).count())" \
+  2>/dev/null | tail -1 || true)"
+case "$staff_count" in
+  0|"")
+    log "WARNING: this server has NO administrator account."
+    log "  Open /accounts/register/ and the first account becomes the admin,"
+    log "  or set HUNTMAP_ADMIN_PASSWORD and restart."
+    ;;
+  *)
+    log "Administrator accounts: $staff_count"
+    ;;
+esac
+
 WORKERS="${HUNTMAP_WORKERS:-1}"
 THREADS="${HUNTMAP_THREADS:-8}"
 TIMEOUT="${HUNTMAP_TIMEOUT:-180}"

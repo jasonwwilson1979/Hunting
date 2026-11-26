@@ -206,11 +206,30 @@ Quick CLI check of the server side (should print JSON, `"user": null` when signe
 
 ```bash
 curl -sk https://<docker-host>:8443/api/me/; echo
+curl -sk https://<docker-host>:8443/api/diag/; echo      # accounts, admin, maps
 curl -sk -X POST -H 'Content-Type: application/json' \
      -d '{"username":"admin","password":"YOUR-PASSWORD"}' \
      https://<docker-host>:8443/api/login/
 ```
 
+**"Nobody can log in at all" — there is no administrator yet.** This is the most common first-run
+problem (forgotten `HUNTMAP_ADMIN_PASSWORD`, or a compose file where it was blanked). You can see it
+three ways:
+
+- `docker logs <container> | grep -i admin` → `WARNING: this server has NO administrator account.`
+- In the app: **Tools → Account → Check server** → `server v2 · 0 accounts · NO admin · 0 maps`.
+- `curl -sk https://<host>:8443/api/diag/` → `"staff": 0, "accounts_ready": false`.
+
+Three ways out, all without editing the database by hand:
+
+1. **From the app or a browser:** *Create account* (or open `/accounts/register/`). **The first
+   account on the server automatically becomes the administrator**, so it can open `/admin/` and
+   `/upload/` straight away.
+2. Set `HUNTMAP_ADMIN_PASSWORD` in the stack and restart: the entrypoint creates/refreshes the
+   `admin` superuser from it.
+3. `docker exec -it <container> python manage.py createsuperuser`.
+
+Once one admin exists, new accounts are ordinary users (their own maps plus the shared ones).
 
 - **On the PC:** `/accounts/register/` to create one, `/accounts/login/` to sign in,
   `/library/` shows *Signed in as …* and a **Sign out** button.
@@ -787,12 +806,12 @@ the app opens, both maps survive with their images, GPS reports a fix and the ge
 renders from storage. A second, fresh phone downloads the map and starts with the PC's
 georeference, and a **map uploaded by one signed-in device shows up on another**.
 
-`server/maps/tests.py` (24 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (28 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
 and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
-(owner yes, stranger 403), account registration/login/logout, ownership scoping and
-`HUNTMAP_REQUIRE_AUTH`.
+(owner yes, stranger 403), account registration/login/logout, **the first account becoming the
+administrator**, `/api/diag/`, ownership scoping and `HUNTMAP_REQUIRE_AUTH`.
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

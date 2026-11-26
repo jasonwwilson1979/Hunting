@@ -130,6 +130,11 @@
     });
   };
 
+  /** Ask the server what it knows: accounts, version, maps. */
+  SY.diag = function () {
+    return api('diag/');
+  };
+
   /** The maps that pass the panel's search / state / county filters. */
   SY.filtered = function () {
     const q = (SY.state.q || '').trim().toLowerCase();

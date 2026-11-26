@@ -301,6 +301,42 @@ class MapLibraryTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["user"], "Caroline")
 
+    def test_first_account_becomes_the_admin(self):
+        get_user_model().objects.all().delete()          # a fresh server, nobody can log in
+        diag = self.client.get("/api/diag/").json()
+        self.assertEqual(diag["staff"], 0)
+        self.assertFalse(diag["accounts_ready"])
+        self.assertIn("register", diag["hint"])
+
+        first = self.client.post("/api/register/",
+                                 json.dumps({"username": "owner", "password": "owner-pass-1"}),
+                                 content_type="application/json")
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertTrue(first.json()["first_account"])
+        self.assertTrue(first.json()["is_staff"])
+        owner = get_user_model().objects.get(username="owner")
+        self.assertTrue(owner.is_superuser)
+        # and it can actually reach the admin
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+        self.assertEqual(self.client.post("/api/logout/").status_code, 200)
+        second = self.client.post("/api/register/",
+                                  json.dumps({"username": "friend", "password": "friend-pass-1"}),
+                                  content_type="application/json")
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertFalse(second.json()["first_account"])
+        self.assertFalse(get_user_model().objects.get(username="friend").is_staff)
+
+    def test_diag_reports_accounts_and_session(self):
+        payload = self.client.get("/api/diag/").json()
+        self.assertEqual(payload["server"], "huntmap")
+        self.assertEqual(payload["staff"], 1)             # the fixture's tester
+        self.assertTrue(payload["accounts_ready"])
+        self.assertFalse(payload["session"])
+        self.client.force_login(self.staff)
+        payload = self.client.get("/api/diag/").json()
+        self.assertEqual(payload["signed_in"], "tester")
+
     def test_login_with_no_accounts_explains_itself(self):
         get_user_model().objects.all().delete()      # a fresh server with no admin
         response = self.client.post("/api/login/",

@@ -11,6 +11,10 @@
   <h1>Create account</h1>
   <p class="muted">A local account on this HuntMap server: it keeps your maps separate and lets you
     sign in from any device on your network.</p>
+  {% if first_account %}
+    <div class="msg success">This is the <b>first account</b> on the server, so it will also be the
+      administrator (access to <span class="mono">/admin/</span> and <span class="mono">/upload/</span>).</div>
+  {% endif %}
 
   {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors }}</div>{% endif %}
   <div class="card">

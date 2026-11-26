@@ -245,12 +245,44 @@ def register(request):
         form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            promoted = _bootstrap_admin(user)
             login(request, user)
-            messages.success(request, "Welcome, %s. You are signed in." % user.username)
+            messages.success(request, "Welcome, %s. You are signed in.%s" % (
+                user.username,
+                " You are the first account, so this one is the administrator."
+                if promoted else ""))
             return redirect("library")
     else:
         form = UserCreationForm()
-    return render(request, "maps/register.html", {"form": form})
+    return render(request, "maps/register.html", {
+        "form": form,
+        "first_account": not _staff_exists(),
+    })
+
+
+def _staff_exists():
+    User = get_user_model()
+    return User.objects.filter(is_active=True, is_staff=True).exists()
+
+
+def _bootstrap_admin(user):
+    """The first account on a fresh server becomes the administrator.
+
+    Without this, a deployment that forgot HUNTMAP_ADMIN_PASSWORD is a dead end:
+    nobody can reach /admin/ or /upload/ and there is no way in from the UI.
+    """
+    if _staff_exists() and not user.is_staff:
+        return False
+    changed = False
+    if not user.is_staff:
+        user.is_staff = True
+        changed = True
+    if not user.is_superuser:
+        user.is_superuser = True
+        changed = True
+    if changed:
+        user.save(update_fields=["is_staff", "is_superuser"])
+    return changed
 
 
 # --------------------------------------------------------------------- upload
@@ -410,8 +442,31 @@ def api_register(request):
         return JsonResponse({"error": "That user name is taken"}, status=400)
     user = User.objects.create_user(username=username, password=password,
                                     email=(payload.get("email") or "").strip())
+    promoted = _bootstrap_admin(user)
     login(request, user)
-    return JsonResponse({"ok": True, "user": user.username}, status=201)
+    return JsonResponse({"ok": True, "user": user.username, "is_staff": user.is_staff,
+                         "first_account": promoted}, status=201)
+
+
+@require_GET
+def api_diag(request):
+    """What a deployment needs to know when a sign-in does not work."""
+    User = get_user_model()
+    staff = User.objects.filter(is_active=True, is_staff=True).count()
+    users = User.objects.filter(is_active=True).count()
+    return JsonResponse({
+        "server": "huntmap",
+        "version": 2,
+        "users": users,
+        "staff": staff,
+        "accounts_ready": staff > 0,
+        "hint": ("No administrator yet: open /accounts/register/ and the first account "
+                 "becomes the admin, or set HUNTMAP_ADMIN_PASSWORD.") if staff == 0 else "",
+        "require_auth": bool(getattr(settings, "HUNTMAP_REQUIRE_AUTH", False)),
+        "maps": MapDocument.objects.count(),
+        "signed_in": request.user.username if request.user.is_authenticated else None,
+        "session": request.session.session_key is not None,
+    })
 
 
 @require_GET

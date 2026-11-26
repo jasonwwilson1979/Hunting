@@ -45,7 +45,8 @@
     'toggleTiles', 'overlayList', 'btnAddMap', 'btnRecalibrate', 'dlZoomMin', 'dlZoomMax',
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
     'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
-    'accountState', 'accountNote', 'signServer', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'accountState', 'accountNote', 'signServer', 'btnAccountCheck', 'accountDiag',
+    'accountAdminLink', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -338,6 +339,33 @@
     }
     openSheet('sheetSignIn');
     el.signUser.focus();
+  }
+
+  /** Tools → Account → "Check server": show what the server actually reports. */
+  function checkServer() {
+    if (!H.Sync) return;
+    el.accountDiag.hidden = false;
+    el.accountDiag.textContent = 'Checking\u2026';
+    H.Sync.diag().then(function (d) {
+      const bits = [
+        'server v' + d.version,
+        d.users + ' account' + (d.users === 1 ? '' : 's'),
+        d.staff ? (d.staff + ' admin') : 'NO admin',
+        d.maps + ' map' + (d.maps === 1 ? '' : 's')
+      ];
+      if (d.signed_in) bits.push('signed in as ' + d.signed_in);
+      if (d.require_auth) bits.push('library locked');
+      el.accountDiag.textContent = bits.join(' \u00b7 ') + (d.hint ? '\n' + d.hint : '');
+      el.accountAdminLink.hidden = !d.signed_in || !d.staff;
+      if (!d.accounts_ready) {
+        el.accountNote.textContent = 'No administrator yet. Use Create account: the first ' +
+          'account becomes the admin, or set HUNTMAP_ADMIN_PASSWORD and restart.';
+      }
+    }).catch(function (err) {
+      el.accountDiag.textContent = (err && err.status === 404)
+        ? 'No /api/diag/ on this server \u2014 it is an older build. Rebuild/redeploy the container.'
+        : 'Server check failed: ' + ((err && err.message) || err);
+    });
   }
 
   function renderAccount() {
@@ -2346,6 +2374,7 @@
       renderSync();
     });
     U.on(el.btnAccountSignIn, 'click', openSignInSheet);
+    U.on(el.btnAccountCheck, 'click', checkServer);
     U.on(el.btnAccountSignOut, 'click', function () {
       if (!H.Sync) return;
       H.Sync.logout().then(function () {
