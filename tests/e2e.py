@@ -64,6 +64,14 @@ def main():
             check("no uncaught JS errors on load", not page_errors, page_errors[:2])
 
             # ---------------- GPS ----------------
+            page.evaluate("""(() => {
+                const g = navigator.geolocation;
+                window.__gpsCalls = { get: [], watch: [] };
+                const og = g.getCurrentPosition.bind(g);
+                const ow = g.watchPosition.bind(g);
+                g.getCurrentPosition = (ok, err, opts) => { window.__gpsCalls.get.push(opts || {}); return og(ok, err, opts); };
+                g.watchPosition = (ok, err, opts) => { window.__gpsCalls.watch.push(opts || {}); return ow(ok, err, opts); };
+            })()""")
             page.click("#btnLocate")
             try:
                 page.wait_for_function("window.Hunt.GPS.state.status === 'ok'", timeout=15000)
@@ -75,6 +83,34 @@ def main():
             check("GPS chip shows accuracy", "\u00b1" in page.inner_text("#gpsText"), page.inner_text("#gpsText"))
             check("coordinate HUD filled", "44.12" in page.inner_text("#coordText"), page.inner_text("#coordText"))
             check("UTM alternate shown", "19T" in page.inner_text("#coordSub"), page.inner_text("#coordSub"))
+
+            gps_calls = page.evaluate("JSON.stringify(window.__gpsCalls)")
+            gps_calls = json.loads(gps_calls)
+            check("quick network/Wi-Fi fix is requested first",
+                  any(o.get("enableHighAccuracy") is False for o in gps_calls["get"]),
+                  gps_calls["get"])
+            check("live watch keeps high accuracy",
+                  any(o.get("enableHighAccuracy") is True for o in gps_calls["watch"]),
+                  gps_calls["watch"])
+            check("fix records its source", gps.get("source") in ("gps", "network"), gps.get("source"))
+            check("waiting watchdog is armed but not tripped", gps.get("slow") is False, gps.get("slow"))
+
+            page.click("#gpsChip")
+            page.wait_for_timeout(400)
+            page.click("#btnGpsFast")
+            page.wait_for_timeout(700)
+            fast = page.evaluate("""(() => {
+                const calls = window.__gpsCalls.watch;
+                return {
+                    state: window.Hunt.GPS.state.highAccuracy,
+                    setting: window.Hunt.Data.settings.highAccuracy,
+                    lastWatch: calls.length ? calls[calls.length - 1].enableHighAccuracy : null
+                };
+            })()""")
+            check("Fast Wi-Fi fix switches the live watch to network mode",
+                  fast["state"] is False and fast["setting"] is False and fast["lastWatch"] is False, fast)
+            page.click("#sheetGps [data-close]")
+            page.wait_for_timeout(300)
             check("canvas has drawn pixels", page.evaluate(
                 "(() => { const c = document.getElementById('map'); const x = c.getContext('2d');"
                 " const d = x.getImageData(Math.floor(c.width/2) - 3, Math.floor(c.height/2) - 3, 6, 6).data;"

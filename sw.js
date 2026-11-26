@@ -2,7 +2,7 @@
    Caches the app shell so the app opens with no signal. Map tiles are cached
    by the page itself (Cache API) so it can report progress and quota errors. */
 
-const VERSION = 'huntmap-shell-v1.4.0';
+const VERSION = 'huntmap-shell-v1.5.0';
 const SHELL = [
   './',
   './index.html',

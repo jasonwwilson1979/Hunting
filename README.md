@@ -542,6 +542,21 @@ huge jobs. A 4 × 6 km area at z12–16 is roughly 400 tiles / 10 MB.
 because the phone cannot use network assistance. Hold it under open sky. Compass heading comes
 from the magnetometer and is independent of the network.
 
+**If the fix takes forever.** The app asks for two things at once: a **quick Wi-Fi/network fix**
+(`enableHighAccuracy: false`, usually answered in a second or two at 20–500 m) and a **satellite
+watch** that refines it to 3–10 m. That is why you get a position on the map almost immediately and
+a better one a moment later. When nothing arrives:
+
+1. **Indoors / on a laptop** there is no satellite signal — only network positioning. Chrome/Safari
+   need the **OS location service** switched on (*Windows: Settings → Privacy → Location*,
+   *macOS: Privacy & Security → Location Services*), and the network fix needs internet.
+2. **Tap the GPS chip → Fast Wi-Fi fix** to skip the satellite wait (it clears *Settings →
+   High-accuracy GPS*). Turn that setting back on outdoors for metre-level accuracy.
+3. **On the phone outdoors**, give it up to 2 minutes under open sky the first time; after that
+   fixes are instant because the almanac is cached.
+4. If the chip shows **No fix · 25 s**, the app is telling you nothing came back — check permission
+   (the chip would say *GPS blocked*) and the location service, then *Restart GPS*.
+
 **Keep the screen on:** *Tools → Keep screen awake* uses the Wake Lock API where supported
 (iOS 16.4+, Chrome). If it is unavailable, raise *Settings → Display → Auto-Lock* instead.
 
@@ -661,7 +676,9 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (77 checks): load without errors, GPS fix, HUD coordinates/UTM, base map default and
+`tests/e2e.py` (82 checks): load without errors, GPS fix (two-phase: a quick network/Wi-Fi request
+then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button
+switching the watch to network mode), HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
 page is never drawn and marks the provider blocked), the 16 spot types and their icons (rasterised
 for the canvas, shown on the chips and in the list), waypoint save + persistence, navigation bar,

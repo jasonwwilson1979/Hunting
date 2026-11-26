@@ -56,7 +56,7 @@
     'btnCalibPoints', 'btnCalibDrag', 'calibInfo', 'sheetCalibPoints', 'btnCalibResetPts',
     'calibPtHint', 'calibCanvas', 'calibPts', 'btnCalibApply', 'calibRot', 'calibRotVal',
     'mapRotateRow', 'mapRotValue', 'btnRotLeft', 'btnRotRight', 'btnRot180',
-    'sheetGps', 'gpsDetails', 'btnGpsRestart', 'sheetBackup', 'btnBackupExport',
+    'sheetGps', 'gpsDetails', 'btnGpsRestart', 'btnGpsFast', 'sheetBackup', 'btnBackupExport',
     'btnBackupImport', 'fileBackup',
     'btnExportWpGpx', 'btnExportTracksGpx', 'btnImportGpx', 'fileGpx', 'storageInfo',
     'btnPersist'];
@@ -489,13 +489,19 @@
       const age = GPS.age();
       const stale = age != null && age > 45000;
       const poor = st.accuracy != null && st.accuracy > 35;
+      const net = st.source === 'network';
       cls = stale || poor ? 'warn' : 'ok';
       label = st.accuracy != null ? '\u00b1' + Math.round(st.accuracy) + ' m' : 'GPS fix';
+      if (net && (st.accuracy == null || st.accuracy > 100)) label += ' \u00b7 Wi-Fi';
       if (stale) label += ' \u00b7 ' + U.fmtAge(age);
-      else if (poor) label += ' \u00b7 weak';
+      else if (poor && !net) label += ' \u00b7 weak';
     } else if (st.status === 'waiting') {
       cls = 'wait';
       label = st.lat != null ? 'GPS \u00b1' + Math.round(st.accuracy) + ' m' : 'Searching\u2026';
+      if (st.slow && st.lat == null) {
+        const secs = st.startedAt ? Math.round((Date.now() - st.startedAt) / 1000) : 0;
+        label = 'No fix \u00b7 ' + secs + ' s';
+      }
     } else if (st.status === 'denied') {
       cls = 'err'; label = 'GPS blocked';
     } else if (st.status === 'insecure') {
@@ -509,14 +515,18 @@
     if (txt.textContent !== label) txt.textContent = label;
     el.btnLocate.classList.toggle('on', !!S.follow);
 
-    const warn = st.status === 'insecure' || st.status === 'denied';
-    el.gpsWarn.hidden = !warn;
-    if (warn) {
-      el.gpsWarn.textContent = st.status === 'insecure'
-        ? 'GPS needs a secure page \u2014 open the app from its https:// address'
-        : 'Location permission denied \u2014 allow it in your browser settings';
+    let warn = '';
+    if (st.status === 'insecure') {
+      warn = 'GPS needs a secure page \u2014 open the app from its https:// address';
+    } else if (st.status === 'denied') {
+      warn = 'Location permission denied \u2014 allow it in your browser settings';
+    } else if (st.status === 'waiting' && st.slow && st.lat == null) {
+      warn = 'No location yet. Wi-Fi location needs the phone/PC location service on;' +
+        ' satellites need open sky. Tap the GPS chip for details.';
     }
-    if (!ticking && st.status === 'ok' && st.accuracy != null && st.accuracy > 60) {
+    el.gpsWarn.hidden = !warn;
+    if (warn && el.gpsWarn.textContent !== warn) el.gpsWarn.textContent = warn;
+    if (!ticking && st.status === 'ok' && st.accuracy != null && st.accuracy > 60 && st.source !== 'network') {
       U.toast('Weak GPS (\u00b1' + Math.round(st.accuracy) + ' m). Move to open sky.', 'err', 3000);
     }
   }
@@ -1746,7 +1756,7 @@
   /* ------------------------------- GPS panel ------------------------------- */
   function gpsStatusText(st) {
     return ({
-      off: 'Off', waiting: 'Searching for satellites', ok: 'Fixed', denied: 'Permission denied',
+      off: 'Off', waiting: 'Searching (Wi-Fi first, then satellites)', ok: 'Fixed', denied: 'Permission denied',
       unavailable: 'Not supported', insecure: 'Needs HTTPS', error: 'Error'
     })[st.status] || st.status;
   }
@@ -1755,7 +1765,12 @@
     const st = GPS.state;
     const rows = [
       ['Status', gpsStatusText(st)],
+      ['Source', st.lat == null ? '--' :
+        (st.source === 'network' ? 'Network / Wi-Fi (coarse)' : 'Satellite GPS')],
+      ['Mode', st.highAccuracy ? 'High accuracy' : 'Fast / network'],
       ['Accuracy', st.accuracy != null ? '\u00b1' + st.accuracy.toFixed(1) + ' m (' + U.fmtDist(st.accuracy) + ')' : '--'],
+      ['Searching', (st.status === 'waiting' && st.startedAt)
+        ? Math.round((Date.now() - st.startedAt) / 1000) + ' s' : '--'],
       ['Latitude', st.lat != null ? G.fmtDMSlat(st.lat) : '--'],
       ['Longitude', st.lon != null ? G.fmtDMSlon(st.lon) : '--'],
       ['Decimal', st.lat != null ? G.fmtDD(st.lat, st.lon, 6) : '--'],
@@ -2193,6 +2208,15 @@
     U.on(el.btnGpsRestart, 'click', function () {
       GPS.restart({ highAccuracy: D.settings.highAccuracy });
       U.toast('Restarting GPS\u2026', 'ok');
+    });
+    U.on(el.btnGpsFast, 'click', function () {
+      // Quick network/Wi-Fi fix: no satellite wait (the usual answer indoors).
+      D.settings.highAccuracy = false;
+      if (el.setHighAcc) el.setHighAcc.checked = false;
+      D.saveSettings();
+      GPS.restart({ highAccuracy: false });
+      U.toast('Fast mode: using Wi-Fi / network location', 'ok', 3200);
+      renderGpsDetails();
     });
 
     U.on(el.setUnits, 'change', function () {

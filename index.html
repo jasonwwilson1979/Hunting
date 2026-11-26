@@ -306,7 +306,7 @@
     </label>
     <label class="switch-row"><span>Red night mode</span><input type="checkbox" id="setNight"></label>
     <label class="switch-row"><span>Keep screen awake</span><input type="checkbox" id="setAwake" checked></label>
-    <label class="switch-row"><span>High-accuracy GPS</span><input type="checkbox" id="setHighAcc" checked></label>
+    <label class="switch-row"><span>High-accuracy GPS <em class="muted small">(off = fast Wi-Fi fix)</em></span><input type="checkbox" id="setHighAcc" checked></label>
     <label class="switch-row"><span>Waypoint labels</span><input type="checkbox" id="setLabels" checked></label>
     <label class="switch-row"><span>Lat/lon grid</span><input type="checkbox" id="setGrid"></label>
     <label class="switch-row"><span>Show tracks on map</span><input type="checkbox" id="setTrail" checked></label>
@@ -348,7 +348,7 @@
   </header>
   <div class="sheet-body help">
     <h3>Getting a GPS fix</h3>
-    <p>Tap the crosshair button once to allow location access. iPhone GPS works in airplane mode &mdash; it only listens to satellites. Without cell/Wi-Fi assistance the first fix can take 30&ndash;120 seconds; keep the phone under open sky. Accuracy improves to 3&ndash;10 m after a minute.</p>
+    <p>Tap the crosshair button once to allow location access. The app asks for a quick <b>Wi-Fi / network</b> fix first (usually a second or two, 20&ndash;500 m) so you are on the map immediately, then refines it with satellites (3&ndash;10 m). On a laptop or indoors there is no satellite signal &mdash; the network fix is what you get; the phone/PC <em>location service</em> must be switched on. Outdoors, the first satellite fix can take 30&ndash;120 seconds without network assistance; keep the phone under open sky. If it stays on &ldquo;No fix&rdquo;, open the GPS panel and press <b>Fast Wi-Fi fix</b>.</p>
     <h3>Add your paper or PDF map</h3>
     <p>Maps &rarr; <em>Add PDF or image</em>. Choose a PDF (multi-page is fine; pick the page), a TIFF scan, or a
       photo/scan. The page is rendered on the device at high resolution, then georeferenced:</p>
@@ -469,8 +469,11 @@
   </header>
   <div class="sheet-body">
     <div class="kv-grid" id="gpsDetails"></div>
-    <button class="btn wide" id="btnGpsRestart" type="button">Restart GPS</button>
-    <p class="note small">Phones receive GPS signals from satellites &mdash; no cell service or Wi-Fi is needed. In airplane mode the fix can take longer (30&ndash;120 s) because the phone cannot use network assistance. Hold the phone so it can see the sky.</p>
+    <div class="row gap wrap">
+      <button class="btn" id="btnGpsRestart" type="button">Restart GPS</button>
+      <button class="btn" id="btnGpsFast" type="button">Fast Wi-Fi fix</button>
+    </div>
+    <p class="note small">The app asks for a quick <b>Wi-Fi / network</b> location first (seconds, 20&ndash;500 m), then refines it with satellites (3&ndash;10 m). Indoors, or on a laptop without GPS, only the network fix is possible &mdash; the phone/PC <em>location service</em> must be on for that. <b>Fast Wi-Fi fix</b> switches off the satellite step, which is the quickest way to get on the map inside a building.</p>
   </div>
 </section>
 
