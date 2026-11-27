@@ -30,11 +30,11 @@ Everything stays on the device unless you choose to use the server: the app has 
 uploads nothing on its own. With a server, your maps, spots and tracks go only to that server, under
 your own account.
 
-**Version.** The app shows `HuntMap v1.10.0 · 2026-11-27` in **Tools → About** (and the same number
-leads the diagnostics line); the server reports `server v3` in `/api/health/`, `/api/maps/` and
+**Version.** The app shows `HuntMap v1.10.1 · 2026-11-27` in **Tools → About** (and the same number
+leads the diagnostics line); the server reports `server v4` in `/api/health/`, `/api/maps/` and
 `/api/diag/`. **Tools → Account → Check server** prints both side by side, so "which build am I
 talking to?" is never a guess. Every release is listed in [CHANGELOG.md](CHANGELOG.md) and tagged
-(`git tag v1.10.0`); to cut a new one, bump `js/version.js` (`app` **and** `shell`) — the shell name is
+(`git tag v1.10.1`); to cut a new one, bump `js/version.js` (`app` **and** `shell`) — the shell name is
 the service-worker cache, so bumping it is what makes phones replace their cached copy.
 
 ![HuntMap running on a phone with USGS topo, waypoint and GPS fix](tests/screenshots/01-map.png)
@@ -213,7 +213,8 @@ Accounts live in this server's database — no external service, no email confir
 | *Wrong user name or password* | Case-insensitive and whitespace-tolerant now; the admin password is `HUNTMAP_ADMIN_PASSWORD`. Change it with `docker exec -it huntmap python manage.py changepassword admin`. |
 | *The server replied with a web page instead of JSON* | Something in front (Cloudflare **Access**, an auth proxy, a captive portal) intercepted `/api/`. Sign in there first, or bypass `/api/*` for that app. |
 | *Could not reach the server* | Wrong host/port, or the container is down. Check `curl -sk https://<host>:8443/api/me/`. |
-| *I don't see a button the docs mention* (Sync spots, Edit on a map, state/county fields) | The phone is running a cached copy of the app. **Tools → About** shows `HuntMap v…` — compare it with `js/version.js`. Press **Tools → About → Update app** (clears the cache, unregisters the service worker, reloads); your data is kept. Then **Tools → Account → Check server**: `app v1.10.0 · server v3 …` proves both ends are current. |
+| *I don't see a button the docs mention* (Sync spots, Edit on a map, state/county fields) | The phone is running a cached copy of the app. **Tools → About** shows `HuntMap v…` — compare it with `js/version.js`. Press **Tools → About → Update app** (clears the cache, unregisters the service worker, reloads); your data is kept. Then **Tools → Account → Check server**: `app v1.10.1 · server v4 …` proves both ends are current. |
+| *Deleted spots come back after a sync* | Fixed in **v1.10.1**: the app sent a deletion without coordinates and the server skipped it. Redeploy the container **and** press **Tools → About → Update app** on the phone (both sides carry the fix). If the account sheet says *"N deletions not applied by the server — it is an older build"*, the container is still the old image. |
 | *Check server says `0 maps in the library`* | The library really is empty: it only holds maps you uploaded. Add a map on the phone with **Copy to my PC library** ticked (it is ticked by default when signed in), use **Maps → Your maps → Edit → Copy to my PC library** for a map already on the phone, or drop files in `/upload/`. |
 | **CSRF verification failed. Request aborted.** | TLS ended at a proxy/Cloudflare but Django thought it was http. Now handled automatically when the request comes from a local proxy (see below). If you front it with a proxy on *another* machine, set `HUNTMAP_PROXY_SSL=1`, `HUNTMAP_FORWARDED_HOST=1` and `HUNTMAP_ORIGINS=https://your.hostname`. |
 
@@ -241,9 +242,9 @@ problem (forgotten `HUNTMAP_ADMIN_PASSWORD`, or a compose file where it was blan
 three ways:
 
 - `docker logs <container> | grep -i admin` → `WARNING: this server has NO administrator account.`
-- In the app: **Tools → Account → Check server** → `server v3 · 0 accounts · NO admin · 0 maps`.
+- In the app: **Tools → Account → Check server** → `server v4 · 0 accounts · NO admin · 0 maps`.
   The version number is the quickest way to tell whether the container you are talking to is the
-  image you just built: v3 added spot/track sync, v2 added the account/place features.
+  image you just built: v4 fixed deletions, v3 added spot/track sync, v2 added the account/place features.
 - `curl -sk https://<host>:8443/api/diag/` → `"staff": 0, "accounts_ready": false`.
 
 Three ways out, all without editing the database by hand:
@@ -852,7 +853,7 @@ moving, GPX round-trip, reload persistence, service worker, a full **offline rel
 map loaded through the UI, rotated 90°, georeferenced with a 5° fine rotation, and the align-bar
 sliders.
 
-`tests/e2e_django.py` (36 checks): Django serves the app, the PC library is listed with its place,
+`tests/e2e_django.py` (39 checks): Django serves the app, the PC library is listed with its place,
 **search / state filters**, **editing a map's details on the server**, the **Tools → Account** card
 (create account, shows the user, sign out), **Sync spots visible while signed out**, the app version
 in *Tools → About*, the `/library/` page and its state filter, PDF + TIFF
@@ -861,18 +862,20 @@ the app opens, both maps survive with their images, GPS reports a fix and the ge
 renders from storage. A second, fresh phone downloads the map and starts with the PC's
 georeference, a **map uploaded by one signed-in device shows up on another**, and so do **spots**:
 a waypoint made on the first device is synced to the account (`/api/sync/`) and is there after the
-second device signs in. Also checks that the add-map form and the per-map **Edit** sheet both carry
-name / state / county / city.
+second device signs in, **deleting it sticks** (gone locally, gone on the server, gone on the other
+device before it syncs again). Also checks that the add-map form and the per-map **Edit** sheet both
+carry name / state / county / city.
 
-`server/maps/tests.py` (37 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (40 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
 and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
 (owner yes, stranger 403), account registration/login/logout, **the first account becoming the
 administrator**, `/api/diag/`, **CSRF behind a TLS-terminating proxy** (trusted for local peers,
 ignored for the internet), ownership scoping, `HUNTMAP_REQUIRE_AUTH`, and **spot/track sync**:
-sign-in required, newest `updatedAt` wins, deletions kept as tombstones, a second device receiving the
-same account's spots, and accounts being kept apart.
+sign-in required, newest `updatedAt` wins, **coordinate-less tombstones**, a deletion beating a slow
+clock, unknown-id tombstones, a second device receiving the same account's spots, and accounts being
+kept apart.
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

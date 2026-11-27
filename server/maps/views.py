@@ -295,7 +295,7 @@ def api_health(request):
     return JsonResponse({
         "ok": True,
         "server": "huntmap",
-        "version": 3,
+        "version": 4,
         "maps": MapDocument.objects.count(),
     })
 
@@ -309,7 +309,7 @@ def api_maps(request):
     docs = _filtered(visible_maps(request.user), request.GET)
     return JsonResponse({
         "server": "huntmap",
-        "version": 3,
+        "version": 4,
         "user": request.user.username if request.user.is_authenticated else None,
         "require_auth": getattr(settings, "HUNTMAP_REQUIRE_AUTH", False),
         "maps": [map_json(request, doc) for doc in docs],
@@ -497,12 +497,27 @@ def api_sync(request):
             if not isinstance(entry, dict):
                 continue
             remote_id = str(entry.get("id") or "").strip()[:64]
+            if not remote_id:
+                continue
+            updated = _ms(entry.get("updatedAt"))
+            if entry.get("deleted"):
+                # A deletion carries no coordinates, so it is handled before the
+                # lat/lon check - and it always wins, because pressing Delete must
+                # not be undone by a phone whose clock runs a little behind.
+                spot, _created = SyncedSpot.objects.get_or_create(
+                    owner=user, remote_id=remote_id, defaults={"lat": 0.0, "lon": 0.0})
+                if not spot.deleted:
+                    spot.deleted = True
+                    spot.updated_ms = max(spot.updated_ms, updated)
+                    spot.save(update_fields=["deleted", "updated_ms"])
+                continue
             lat, lon = _num(entry.get("lat")), _num(entry.get("lon"))
-            if not remote_id or lat is None or lon is None:
+            if lat is None or lon is None:
                 continue
             spot, created = SyncedSpot.objects.get_or_create(
                 owner=user, remote_id=remote_id, defaults={"lat": lat, "lon": lon})
-            updated = _ms(entry.get("updatedAt"))
+            if spot.deleted:
+                continue                       # deleted stays deleted
             if not created and updated <= spot.updated_ms:
                 continue                       # the copy on the server is newer
             spot.name = str(entry.get("name") or "")[:190]
@@ -513,7 +528,6 @@ def api_sync(request):
             spot.alt = alt
             spot.created_ms = _ms(entry.get("createdAt"), updated)
             spot.updated_ms = updated
-            spot.deleted = bool(entry.get("deleted"))
             spot.save()
 
         for entry in payload.get("tracks") or []:
@@ -561,7 +575,7 @@ def api_diag(request):
     users = User.objects.filter(is_active=True).count()
     return JsonResponse({
         "server": "huntmap",
-        "version": 3,
+        "version": 4,
         "users": users,
         "staff": staff,
         "accounts_ready": staff > 0,

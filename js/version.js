@@ -4,7 +4,7 @@
    CHANGELOG.md entry and tag the commit (`git tag -a v1.10.0`). `shell` is the
    service-worker cache name, so changing it throws away the old cached files. */
 self.HUNTMAP_VERSION = {
-  app: '1.10.0',
+  app: '1.10.1',
   date: '2026-11-27',
-  shell: 'huntmap-shell-v1.10.0'
+  shell: 'huntmap-shell-v1.10.1'
 };

@@ -164,16 +164,42 @@
   }
 
   /** Remember that something was deleted, so the server removes it too. */
+  SY._delQueue = Promise.resolve();
   SY.markDeleted = function (kind, id) {
-    return DB.kvGet('syncDeleted', null).then(function (state) {
-      state = state || { spots: [], tracks: [] };
-      const list = state[kind === 'tracks' ? 'tracks' : 'spots'];
-      if (!list.some(function (d) { return d.id === id; })) {
-        list.push({ id: id, updatedAt: Date.now() });
-      }
-      return DB.kvSet('syncDeleted', state);
+    // Serialised: two quick deletes must not read-modify-write the same list and
+    // lose one of the tombstones (the lost spot would come back on the next pull).
+    SY._delQueue = SY._delQueue.then(function () {
+      return DB.kvGet('syncDeleted', null).then(function (state) {
+        state = state || { spots: [], tracks: [] };
+        const list = state[kind === 'tracks' ? 'tracks' : 'spots'];
+        if (!list.some(function (d) { return d.id === id; })) {
+          list.push({ id: id, updatedAt: Date.now() });
+        }
+        return DB.kvSet('syncDeleted', state);
+      });
     }).catch(function () {});
+    return SY._delQueue;
   };
+
+  /**
+   * Forget a deletion only when the server reports the record as deleted.
+   * Returns how many tombstones had to be kept (i.e. the server ignored them).
+   */
+  function dropConfirmedTombstones(json) {
+    const alive = {};
+    (json.spots || []).forEach(function (s) { if (!s.deleted) alive[s.id] = 1; });
+    (json.tracks || []).forEach(function (t) { if (!t.deleted) alive[t.id] = 1; });
+    return DB.kvGet('syncDeleted', null).then(function (del) {
+      del = del || { spots: [], tracks: [] };
+      const keep = {
+        spots: (del.spots || []).filter(function (d) { return alive[d.id]; }),
+        tracks: (del.tracks || []).filter(function (d) { return alive[d.id]; })
+      };
+      return DB.kvSet('syncDeleted', keep).then(function () {
+        return keep.spots.length + keep.tracks.length;
+      });
+    }).catch(function () { return 0; });
+  }
 
   /** Debounced push after a change (offline-safe: it simply fails quietly). */
   SY.queueSync = function () {
@@ -199,13 +225,14 @@
     SY.syncState.busy = true;
     SY.syncState.signedOut = false;
 
+    let pending = { spots: [], tracks: [] };
     return DB.kvGet('syncDeleted', null).then(function (deleted) {
-      deleted = deleted || { spots: [], tracks: [] };
+      pending = deleted || { spots: [], tracks: [] };
       const body = {
-        spots: spotPayload().concat((deleted.spots || []).map(function (d) {
+        spots: spotPayload().concat((pending.spots || []).map(function (d) {
           return { id: d.id, deleted: true, updatedAt: d.updatedAt };
         })),
-        tracks: trackPayload().concat((deleted.tracks || []).map(function (d) {
+        tracks: trackPayload().concat((pending.tracks || []).map(function (d) {
           return { id: d.id, deleted: true, updatedAt: d.updatedAt };
         }))
       };
@@ -215,13 +242,16 @@
         body: JSON.stringify(body)
       });
     }).then(function (json) {
-      return SY._applyRemote(json).then(function () {
-        return DB.kvSet('syncDeleted', { spots: [], tracks: [] });
-      }).then(function () {
+      return SY._applyRemote(json, pending).then(function () {
+        return dropConfirmedTombstones(json);
+      }).then(function (kept) {
         SY.syncState.at = Date.now();
         SY.syncState.spots = (json.spots || []).filter(function (s) { return !s.deleted; }).length;
         SY.syncState.tracks = (json.tracks || []).filter(function (t) { return !t.deleted; }).length;
-        SY.syncState.error = null;
+        SY.syncState.error = kept
+          ? kept + ' deletion' + (kept === 1 ? '' : 's') +
+            ' not applied by the server \u2014 it is an older build; update the container.'
+          : null;
         SY.syncState.busy = false;
         if (SY.onMerged) { try { SY.onMerged(json); } catch (e) { console.error(e); } }
         if (!quiet) notify();
@@ -237,16 +267,21 @@
   };
 
   /** Merge the server's set into the local one (newest updatedAt wins). */
-  SY._applyRemote = function (json) {
+  SY._applyRemote = function (json, pending) {
     const jobs = [];
     const localSpots = {};
     const localTracks = {};
+    const gone = {};
+    ((pending && pending.spots) || []).forEach(function (d) { gone['s:' + d.id] = 1; });
+    ((pending && pending.tracks) || []).forEach(function (d) { gone['t:' + d.id] = 1; });
     D.waypoints.forEach(function (w) { localSpots[w.id] = w; });
     D.tracks.forEach(function (t) { localTracks[t.id] = t; });
 
     (json.spots || []).forEach(function (r) {
       const local = localSpots[r.id];
-      if (r.deleted) {
+      if (r.deleted || gone['s:' + r.id]) {
+        // Deleted here (or on another device): stay deleted even if this server
+        // has not applied the tombstone yet.
         if (local) {
           D.waypoints = D.waypoints.filter(function (w) { return w.id !== r.id; });
           if (D.settings.targetId === r.id) { D.settings.targetId = null; D.saveSettings(); }
@@ -267,7 +302,7 @@
 
     (json.tracks || []).forEach(function (r) {
       const local = localTracks[r.id];
-      if (r.deleted) {
+      if (r.deleted || gone['t:' + r.id]) {
         if (local) {
           D.tracks = D.tracks.filter(function (t) { return t.id !== r.id; });
           if (D.activeTrack && D.activeTrack.id === r.id) D.activeTrack = null;

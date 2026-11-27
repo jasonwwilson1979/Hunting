@@ -297,6 +297,39 @@ class MapLibraryTests(TestCase):
         self.assertEqual(len(payload["spots"]), 1)
         self.assertTrue(payload["spots"][0]["deleted"])
 
+    def test_a_tombstone_without_coordinates_still_deletes(self):
+        """The app only sends {id, deleted, updatedAt} when a spot is removed."""
+        self.client.force_login(self.staff)
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot("wp_gone", "Old stand")]}),
+                         content_type="application/json")
+        tombstone = {"id": "wp_gone", "deleted": True, "updatedAt": 5000}
+        response = self.client.post("/api/sync/", json.dumps({"spots": [tombstone]}),
+                                    content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["spots"]), 1, payload)
+        self.assertTrue(payload["spots"][0]["deleted"], payload["spots"][0])
+
+    def test_delete_wins_even_from_a_slow_clock(self):
+        self.client.force_login(self.staff)
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot("wp_skew", updated=900000)]}),
+                         content_type="application/json")
+        # the phone's clock is behind, so the tombstone looks older than the spot
+        self.client.post("/api/sync/", json.dumps(
+            {"spots": [{"id": "wp_skew", "deleted": True, "updatedAt": 1000}]}),
+            content_type="application/json")
+        payload = self.client.get("/api/sync/").json()
+        self.assertTrue(payload["spots"][0]["deleted"], payload["spots"][0])
+
+    def test_a_tombstone_for_an_unknown_spot_is_harmless(self):
+        self.client.force_login(self.staff)
+        response = self.client.post("/api/sync/", json.dumps(
+            {"spots": [{"id": "wp_never_seen", "deleted": True, "updatedAt": 42}]}),
+            content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["spots"][0]["id"], "wp_never_seen")
+        self.assertTrue(response.json()["spots"][0]["deleted"])
+
     def test_second_device_receives_the_spots(self):
         self.client.force_login(self.staff)
         self.client.post("/api/sync/", json.dumps({

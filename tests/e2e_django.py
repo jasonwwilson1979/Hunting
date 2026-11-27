@@ -370,6 +370,32 @@ def main():
                 spot_seen = False
             check("another device receives the spots after signing in", spot_seen,
                   page2.evaluate("window.Hunt.Data.waypoints.map(function (w) { return w.name; })"))
+
+            # deleting a synced spot must stick (it used to come straight back)
+            deleted = page.evaluate("""async () => {
+                const D = window.Hunt.Data, S = window.Hunt.Sync;
+                const spot = D.waypoints.find(function (w) { return w.name === 'Sync Ridge'; });
+                if (!spot) return { ok: false };
+                await D.deleteWaypoint(spot.id);
+                await S.markDeleted('spots', spot.id);
+                const json = await S.syncNow(true);
+                return {
+                    ok: true, id: spot.id,
+                    local: D.waypoints.some(function (w) { return w.id === spot.id; }),
+                    aliveOnServer: (json ? json.spots : []).some(function (s) {
+                        return s.id === spot.id && !s.deleted;
+                    }),
+                    err: S.syncState.error
+                };
+            }""")
+            check("deleting a synced spot sticks on this device",
+                  bool(deleted.get("ok")) and deleted.get("local") is False, deleted)
+            check("the server applies the deletion",
+                  deleted.get("aliveOnServer") is False and not deleted.get("err"), deleted)
+            page2.evaluate("window.Hunt.Sync.syncNow(true)")
+            page2.wait_for_timeout(1500)
+            left = page2.evaluate("window.Hunt.Data.waypoints.map(function (w) { return w.name; })")
+            check("the other device drops the deleted spot", "Sync Ridge" not in left, left)
             ctx3.close()
 
             check("no JS errors at the end", not errors, errors[:3])

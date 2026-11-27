@@ -2,7 +2,7 @@
 
 All notable changes to **HuntMap**. The version you are running is shown in
 **Tools → About** (`HuntMap v1.10.0`) and reported to the phone by the server as
-`server v3`; **Tools → Account → Check server** prints both. Each release bumps
+`server v4`; **Tools → Account → Check server** prints both. Each release bumps
 `js/version.js` (`app` + `shell`, so the service worker's cache is replaced) and is
 tagged in git (`v1.10.0`).
 
@@ -10,11 +10,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.10.1] — 2026-11-27
+
+### Fixed
+- **Deleted spots came straight back** when signed in. The app sends a deletion as
+  `{id, deleted: true, updatedAt}` with no coordinates, and the server skipped any
+  spot without `lat`/`lon` — so the tombstone was dropped, the phone forgot it, and
+  the next pull re-added the spot. The server now handles deletions *before* the
+  coordinate check.
+- **A deletion now always wins**, even from a device whose clock is behind, and a
+  deleted spot stays deleted (a stale phone pushing its old copy cannot resurrect
+  it).
+- The phone keeps a deletion until the **server confirms** it (it used to clear it
+  blindly), and it no longer re-adds a record it has a pending deletion for — so
+  deleting works locally even against an older server, which is reported as
+  *"N deletions not applied by the server — it is an older build"*.
+- Two quick deletions in a row could lose one tombstone (read-modify-write race on
+  the pending list); the writes are now serialised.
+
+### Tests
+- Server: coordinate-less tombstone, delete-beats-slow-clock, unknown-id tombstone,
+  and "deleted stays deleted" (40 tests, up from 37).
+- `tests/e2e_django.py`: delete a synced spot on device A → it is gone from the
+  server and from device B after signing in.
+
+### Changed
+- The server reports **v4** (`app v1.10.1 · server v4` on *Check server*), so the
+  container that has the deletion fix is identifiable at a glance.
+
 ## [1.10.0] — 2026-11-27
 
 ### Added
 - **Version in the UI.** *Tools → About* shows `HuntMap v1.10.0 · date`, the
-  diagnostics line leads with it, and *Check server* prints `app v1.10.0 · server v3`.
+  diagnostics line leads with it, and *Check server* prints `app v1.10.1 · server v4`.
   `js/version.js` is the single source for the page *and* the service worker
   (`importScripts`), so the cache name can never drift from the code again.
 - **Tools → About → Update app.** Deletes the cached shell, unregisters the service
