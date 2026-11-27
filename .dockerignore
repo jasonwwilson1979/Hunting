@@ -4,6 +4,9 @@
 .gitignore
 *.md
 !README.md
+!THIRD_PARTY_LICENSES.md
+!LEGAL.md
+!docs/*.md
 tests
 dist
 Archive.zip
@@ -12,6 +15,7 @@ Archive.zip
 server/db.sqlite3
 server/db.sqlite3-journal
 server/media
+server/tiles
 server/.certs
 .certs
 

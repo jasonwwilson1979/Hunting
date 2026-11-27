@@ -20,6 +20,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .forms import MapEditForm, MapUploadForm
 from .models import ALLOWED_EXTS, MapDocument, SyncedSpot, SyncedTrack
+from . import tiles as tilelib
 
 APP_DIR = Path(settings.HUNTMAP_APP_DIR).resolve()
 APP_SUBDIRS = {"css", "js", "icons", "vendor"}
@@ -65,11 +66,24 @@ def app_file(request, path=""):
     ctype = CTYPES.get(full.suffix.lower()) or mimetypes.guess_type(str(full))[0] or "application/octet-stream"
 
     if rel == "index.html":
-        # Tell the app that a map server is present, so it never probes a
-        # static host (which would log a 404).
+        # Tell the app what this deployment offers: a map server, self-hosted
+        # tiles, and whether only licence-safe base maps may be shown.
         html = full.read_text(encoding="utf-8")
-        marker = '<script>window.__HUNTMAP_SERVER__={upload:"/upload/"};</script>'
-        if marker not in html:
+        cfg = {
+            "upload": "/upload/",
+            "commercial": bool(getattr(settings, "HUNTMAP_COMMERCIAL", False)),
+        }
+        if tilelib.has_local_tiles():
+            info = tilelib.metadata()
+            cfg["tiles"] = {
+                "url": tilelib.tile_url_template(),
+                "maxzoom": info["maxzoom"],
+                "attribution": info["attribution"],
+                "attribution_url": info["attribution_url"],
+                "name": info["name"],
+            }
+        marker = "<script>window.__HUNTMAP_SERVER__=%s;</script>" % json.dumps(cfg)
+        if "window.__HUNTMAP_SERVER__" not in html:
             html = html.replace("</head>", marker + "\n</head>", 1)
         response = HttpResponse(html, content_type=ctype)
         response["Cache-Control"] = "no-cache"
@@ -287,6 +301,56 @@ def _bootstrap_admin(user):
 
 
 # --------------------------------------------------------------------- upload
+
+
+def api_meta(request):
+    """What the app needs to know about this deployment (tiles, licences)."""
+    commercial = bool(getattr(settings, "HUNTMAP_COMMERCIAL", False))
+    info = tilelib.metadata()
+    local = tilelib.has_local_tiles()
+    return JsonResponse({
+        "server": "huntmap",
+        "version": 4,
+        "commercial": commercial,
+        "tiles": {
+            "url": tilelib.tile_url_template() if local else "",
+            "maxzoom": info["maxzoom"],
+            "attribution": info["attribution"],
+            "attribution_url": info["attribution_url"],
+            "name": info["name"],
+            "source": ("external" if getattr(settings, "HUNTMAP_TILE_URL", "") else
+                       "mbtiles" if info["mbtiles"] else "directory" if local else "none"),
+            "local": local,
+        },
+        "licences_url": "/licences/",
+    })
+
+
+@require_safe
+def tile_view(request, z, x, y):
+    """One self-hosted raster tile: /tiles/{z}/{x}/{y}.png"""
+    data, ctype = tilelib.read_tile(z, x, y)
+    if not data:
+        # 404 is meaningful: the app treats a miss as "no tile here" and can fall
+        # back to another provider, so it must not be a 500 or a redirect.
+        return HttpResponse("no tile", status=404, content_type="text/plain")
+    response = HttpResponse(data, content_type=ctype or "image/png")
+    # Tiles change only when you re-render them; a week of caching keeps phones off
+    # the network and is part of making this affordable to serve.
+    response["Cache-Control"] = "public, max-age=604800"
+    response["Access-Control-Allow-Origin"] = "*"
+    return response
+
+
+@require_safe
+def licences_page(request):
+    """Public licence notice: map sources, software, and operator obligations."""
+    commercial = bool(getattr(settings, "HUNTMAP_COMMERCIAL", False))
+    return render(request, "maps/licences.html", {
+        "tiles": tilelib.metadata(),
+        "local_tiles": tilelib.has_local_tiles(),
+        "commercial": commercial,
+    })
 
 
 @require_GET
@@ -592,6 +656,53 @@ def api_diag(request):
         "tracks": (SyncedTrack.objects.filter(owner=request.user, deleted=False).count()
                    if request.user.is_authenticated else None),
     })
+
+
+@csrf_exempt
+@require_http_methods(["GET", "DELETE"])
+def api_account(request):
+    """Your data: export it, or erase it.
+
+    A paid service has to be able to keep the promise a privacy policy makes, so
+    both directions are here rather than in an admin console.
+    """
+    user = request.user
+    if not user.is_authenticated:
+        return JsonResponse({"error": "Sign in first", "code": "auth-required"}, status=401)
+
+    if request.method == "GET":
+        docs = visible_maps(user).filter(owner=user)
+        return JsonResponse({
+            "user": {"username": user.username, "email": user.email,
+                     "date_joined": user.date_joined.isoformat(),
+                     "is_staff": user.is_staff},
+            "maps": [{
+                "id": d.pk, "name": d.name, "kind": d.kind, "page": d.page,
+                "state": d.state, "county": d.county, "city": d.city, "notes": d.notes,
+                "sha256": d.sha256, "size": d.size, "uploaded": d.uploaded_at.isoformat(),
+                "file_url": reverse("map-file", args=[d.pk]),
+                "calibration": d.calib,
+            } for d in docs],
+            "spots": [_spot_json(s) for s in SyncedSpot.objects.filter(owner=user)],
+            "tracks": [_track_json(t) for t in SyncedTrack.objects.filter(owner=user)],
+            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+
+    # DELETE: files first, then the rows, then the login itself.
+    docs = MapDocument.objects.filter(owner=user)
+    for doc in docs:
+        try:
+            if doc.file:
+                doc.file.delete(save=False)
+        except OSError:
+            pass
+    docs.delete()
+    SyncedSpot.objects.filter(owner=user).delete()
+    SyncedTrack.objects.filter(owner=user).delete()
+    username = user.username
+    logout(request)
+    user.delete()
+    return JsonResponse({"deleted": True, "user": username})
 
 
 @require_GET

@@ -49,6 +49,20 @@ HUNTMAP_REQUIRE_AUTH = env("HUNTMAP_REQUIRE_AUTH", "0") == "1"
 HUNTMAP_APP_DIR = str(APP_DIR)
 HUNTMAP_MAX_UPLOAD = int(env("HUNTMAP_MAX_UPLOAD", str(300 * 1024 * 1024)))
 
+# Self-hosted raster tiles (see server/maps/tiles.py). For a site you charge for,
+# point these at tiles you generated yourself - community servers must not carry
+# that traffic.
+HUNTMAP_TILES_DIR = env("HUNTMAP_TILES_DIR", str(BASE_DIR / "tiles"))
+HUNTMAP_TILES_MBTILES = env("HUNTMAP_TILES_MBTILES", "")
+HUNTMAP_TILE_URL = env("HUNTMAP_TILE_URL", "")
+HUNTMAP_TILE_MAXZOOM = int(env("HUNTMAP_TILE_MAXZOOM", "16"))
+HUNTMAP_TILE_ATTRIBUTION = env("HUNTMAP_TILE_ATTRIBUTION", "")
+HUNTMAP_ATTRIBUTION_URL = env("HUNTMAP_ATTRIBUTION_URL",
+                              "https://www.openstreetmap.org/copyright")
+# 1 = only offer base maps that may be used in a paid service: your own tiles and
+# public-domain USGS. Community/third-party tile servers are hidden.
+HUNTMAP_COMMERCIAL = env("HUNTMAP_COMMERCIAL", "0") == "1"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

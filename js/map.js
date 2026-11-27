@@ -713,8 +713,32 @@
     const el = document.getElementById('attribution');
     if (!el) return;
     const att = this.tilesEnabled ? T.attribution(this.provider) : 'Base map off';
-    const txt = (att ? att + ' \u00b7 ' : '') + 'z' + this.zoom.toFixed(1) +
+    const url = this.tilesEnabled ? T.attributionUrl(this.provider) : '';
+    const zoom = 'z' + this.zoom.toFixed(1) +
       (this.overlays.some(function (l) { return l.visible && l.calib; }) ? ' \u00b7 +map' : '');
+    // ODbL safe harbour: the credit must be visible without interaction and link
+    // to openstreetmap.org/copyright, so render a real link rather than plain text.
+    if (url && att) {
+      let link = el.querySelector('a.att-link');
+      if (!link) {
+        el.innerHTML = '';
+        link = document.createElement('a');
+        link.className = 'att-link';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        el.appendChild(link);
+        el.appendChild(document.createTextNode(' \u00b7 '));
+        const z = document.createElement('span');
+        z.className = 'att-zoom';
+        el.appendChild(z);
+      }
+      link.href = url;
+      if (link.textContent !== att) link.textContent = att;
+      const z = el.querySelector('.att-zoom');
+      if (z && z.textContent !== zoom) z.textContent = zoom;
+      return;
+    }
+    const txt = (att ? att + ' \u00b7 ' : '') + zoom;
     if (el.textContent !== txt) el.textContent = txt;
   };
 

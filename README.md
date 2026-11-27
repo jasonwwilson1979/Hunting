@@ -166,20 +166,106 @@ draw and the GPS dot moves (the first fix can take 30–120 s without network as
 | `HUNTMAP_MEDIA` | upload folder (default `server/media`) |
 | `HUNTMAP_PROXY_SSL=1` | trust `X-Forwarded-Proto` behind nginx/caddy |
 | `HUNTMAP_ORIGINS` | extra CSRF trusted origins |
+| `HUNTMAP_TILES_DIR` | folder of self-hosted `z/x/y.png` tiles (container: `/data/tiles`) |
+| `HUNTMAP_TILES_MBTILES` | serve a raster `.mbtiles` archive instead of that folder |
+| `HUNTMAP_TILE_URL` | delegate to your own tile server, e.g. `https://tiles.example.com/{z}/{x}/{y}.png` |
+| `HUNTMAP_TILE_MAXZOOM` | highest zoom your tiles have (default `16`) |
+| `HUNTMAP_TILE_ATTRIBUTION` | credit drawn on the map (default “© OpenStreetMap contributors”) |
+| `HUNTMAP_ATTRIBUTION_URL` | where that credit links (default `openstreetmap.org/copyright`) |
+| `HUNTMAP_COMMERCIAL=1` | paid-site mode: only licence-safe base maps are offered |
 
 API: `GET /api/maps/` (library; add `?q=`, `?state=`, `?county=`), `POST /api/maps/` (multipart
 `file`, `name`, `page`, `state`, `county`, `city`), `GET /api/maps/<id>/`, `PATCH /api/maps/<id>/`
 (rename / fix the place), `GET /api/maps/<id>/file`, `PUT /api/maps/<id>/calibration`,
 `GET|POST /api/sync/` (your spots and tracks — `POST` sends the device's set and returns the merged
-one, needs a signed-in session), plus `GET /api/me/`, `POST /api/login/`, `POST /api/logout/`,
-`POST /api/register/`.
+one, needs a signed-in session), `GET /api/meta/` (tile source + licence), `GET /api/account/`
+(export your data) / `DELETE /api/account/` (erase it), `GET /tiles/<z>/<x>/<y>.png`,
+`GET /licences/`, plus `GET /api/me/`, `POST /api/login/`, `POST /api/logout/`, `POST /api/register/`.
 
 The app is served from the same origin, so there is no CORS. Read endpoints are open to your
 LAN — fine at home, not for the public internet; set `HUNTMAP_TOKEN` if you want writes
 protected, or turn on accounts (below). Uploaded files stay in `server/media/`, outside the web
 app folder.
 
-### Library page: search, places, edit
+### Self-hosted base maps (and using them for a paid site)
+
+The app can draw its base map from **your own server** instead of a public tile
+server. That is the only arrangement that both scales and stays inside the map
+licences once you charge for access.
+
+| Source | Licence | Paid service? |
+| --- | --- | --- |
+| **Your own tiles** rendered from OpenStreetMap data | ODbL 1.0 (Produced Work) | **Yes** — keep “© OpenStreetMap contributors” visible and linked |
+| USGS The National Map (topo, imagery) | public domain | **Yes** — acknowledgement requested |
+| `tile.openstreetmap.org` | ODbL data + OSMF tile policy | **No.** The policy says heavy/prefetch use is prohibited and warns commercial services that access can be withdrawn at any time |
+| `tile.opentopomap.org` | CC-BY-SA 4.0, donated servers | **No** for paid use |
+| Esri World Imagery / Topo (public endpoints) | proprietary | **Only with an Esri agreement** — not redistributable |
+
+**Tell the server where the tiles are** (all three work; pick one):
+
+```bash
+# A. a folder of z/x/y.png  (default: /data/tiles in the container)
+HUNTMAP_TILES_DIR=/data/tiles
+# B. a raster .mbtiles archive instead of a folder
+HUNTMAP_TILES_MBTILES=/data/tiles/region.mbtiles
+# C. a tile server you already run (renderd, tileserver-gl, CDN in front of A)
+HUNTMAP_TILE_URL=https://tiles.example.com/{z}/{x}/{y}.png
+```
+
+Check it from inside the container, then open the app:
+
+```bash
+docker exec -it huntmap python manage.py tiles_info
+# tiles url      : /tiles/{z}/{x}/{y}.png
+# directory      : /data/tiles
+# tile files     : 184231 (z8-16)
+# attribution    : © OpenStreetMap contributors
+```
+
+The app then offers **“This server / Local”** as the first base map, defaults to it,
+and stops asking for zooms above `HUNTMAP_TILE_MAXZOOM`.
+
+**Producing the tiles.** Any raster tile set in `z/x/y.png` works. Two routes that
+produce one:
+
+```bash
+# 1) Render OpenStreetMap for your region (the standard switch2osm setup):
+#    postgresql + postgis + osm2pgsql + renderd + mod_tile in a container.
+wget https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf
+osm2pgsql -d gis --create --slim -G --hstore vermont-latest.osm.pbf
+#    renderd then answers http://tiles.local/tile/{z}/{x}/{y}.png
+#    -> point HUNTMAP_TILE_URL at it (route C), or pre-render and copy the PNGs:
+render_list -a -z 8 -Z 16 -n 4 -m /var/lib/mod_tile
+
+# 2) From a georeferenced raster (e.g. USGS topo GeoTIFFs - public domain):
+gdal2tiles.py --xyz --zoom=8-16 --processes=4 topo.tif /data/tiles
+```
+
+Rough size for planning: a US state at z8–16 is tens of GB; the planet at z0–12 is
+several hundred GB. Render what you sell and put a CDN or a plain web server in
+front of the folder if traffic grows (the app only ever asks for the tiles on
+screen).
+
+**Before you charge anybody**, set:
+
+```bash
+HUNTMAP_COMMERCIAL=1     # hides Esri + the community OSM/OpenTopoMap servers
+HUNTMAP_REQUIRE_AUTH=1   # nothing is visible without an account
+```
+
+`HUNTMAP_COMMERCIAL=1` also rewrites a stored base-map choice that no longer
+qualifies (a phone that had Esri selected switches to your tiles), and the app only
+lists sources whose terms fit. `/licences/` is the public notice to link from your
+footer; **Tools → Licences** is the same list inside the app. The map footer shows
+the credit as a link to <https://www.openstreetmap.org/copyright> — do not hide it
+behind a menu; that is the condition of using the data.
+
+`LEGAL.md` is the checklist for everything else that charging money brings: terms of
+service (`docs/terms-of-service.md`), privacy policy (`docs/privacy-policy.md`,
+including the data-export and account-deletion features that make its promises
+true), refunds, tax and takedown contact. It is a checklist, not legal advice.
+
+
 
 `/library/` is the PC-side browser for the map library (the phone uses *Maps → From your PC*):
 
@@ -798,8 +884,12 @@ index.html                 app shell, panels, icon sprite
 manifest.webmanifest       PWA metadata (name, icons, standalone)
 sw.js                      service worker: app-shell offline cache
 CHANGELOG.md               release notes, one section per version
+LEGAL.md                   checklist for charging money (ToS, privacy, refunds, attribution)
+docs/                      terms-of-service.md and privacy-policy.md templates
+THIRD_PARTY_LICENSES.md    bundled libraries + map data licences (served at /licences/)
 css/app.css                theme, sheets, night mode, touch layout
 js/version.js              the version number (app + service-worker cache name)
+server/maps/tiles.py       self-hosted raster tiles (folder / MBTiles / external URL)
 js/util.js                 DOM helpers, formatting, toasts, modal dialogs
 js/geo.js                  Mercator projection, haversine, UTM, coordinate parsing
 js/sun.js                  NOAA sunrise/sunset/twilight, Meeus moon phase
@@ -852,10 +942,13 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (95 checks): load without errors, the version in *Tools → About* matching
+`tests/e2e.py` (105 checks): load without errors, the version in *Tools → About* matching
 `js/version.js` with the service-worker cache named after it, **every spot type having a silhouette
 that rasterises for the canvas** (the deer marker carrying its white halo), **select-mode bulk delete**
-(tick two of three, confirm, both gone from memory and IndexedDB, mode ends), GPS fix (two-phase: a quick network/Wi-Fi request
+(tick two of three, confirm, both gone from memory and IndexedDB, mode ends), **self-hosted tiles in
+commercial mode** (paid mode picked up, community/Esri sources hidden, your tiles the default, tiles
+fetched from `/tiles/…`, the credit being a link to the OSM copyright page, the Licences sheet listing
+what is withheld, a stored forbidden base map replaced on load), GPS fix (two-phase: a quick network/Wi-Fi request
 then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button
 switching the watch to network mode), HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
@@ -883,16 +976,18 @@ second device signs in, **deleting it sticks** (gone locally, gone on the server
 device before it syncs again). Also checks that the add-map form and the per-map **Edit** sheet both
 carry name / state / county / city.
 
-`server/maps/tests.py` (40 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (49 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
 and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
 (owner yes, stranger 403), account registration/login/logout, **the first account becoming the
 administrator**, `/api/diag/`, **CSRF behind a TLS-terminating proxy** (trusted for local peers,
-ignored for the internet), ownership scoping, `HUNTMAP_REQUIRE_AUTH`, and **spot/track sync**:
-sign-in required, newest `updatedAt` wins, **coordinate-less tombstones**, a deletion beating a slow
-clock, unknown-id tombstones, a second device receiving the same account's spots, and accounts being
-kept apart.
+ignored for the internet), ownership scoping, `HUNTMAP_REQUIRE_AUTH`, **spot/track sync**
+(sign-in required, newest `updatedAt` wins, **coordinate-less tombstones**, a deletion beating a slow
+clock, unknown-id tombstones, a second device receiving the same account's spots, accounts kept
+apart), **self-hosted tiles** (folder, `404` on a miss, MBTiles with the TMS row flip, week-long
+cache header, `/api/meta/` with and without tiles, the injected app config), the **licences page**,
+and **account export / erasure**.
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

@@ -32,6 +32,14 @@ services:
       HUNTMAP_CERT_SAN: "${HUNTMAP_CERT_SAN:-}"
       HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
       HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
+      # Self-hosted base tiles (licensing) - see README "Self-hosted base maps".
+      HUNTMAP_TILES_DIR: "${HUNTMAP_TILES_DIR:-/data/tiles}"
+      HUNTMAP_TILES_MBTILES: "${HUNTMAP_TILES_MBTILES:-}"
+      HUNTMAP_TILE_URL: "${HUNTMAP_TILE_URL:-}"
+      HUNTMAP_TILE_MAXZOOM: "${HUNTMAP_TILE_MAXZOOM:-16}"
+      HUNTMAP_TILE_ATTRIBUTION: "${HUNTMAP_TILE_ATTRIBUTION:-}"
+      # 1 = only licence-safe base maps (your tiles + USGS); needed before you charge.
+      HUNTMAP_COMMERCIAL: "${HUNTMAP_COMMERCIAL:-0}"
     volumes:
       - huntmap-data:/data
 

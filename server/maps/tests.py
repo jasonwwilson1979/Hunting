@@ -256,7 +256,130 @@ class MapLibraryTests(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.name, "Private")
 
-    # ---------------------------------------------------------- spots / tracks sync
+    def test_account_export_and_erasure(self):
+        mine = get_user_model().objects.create_user("erase-me", password="erase-pass-123")
+        other = get_user_model().objects.create_user("keep-me", password="keep-pass-123")
+        self.client.force_login(mine)
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot("wp_mine", "Mine")]}),
+                         content_type="application/json")
+        doc = MapDocument.objects.create(name="My map", owner=mine)
+        shared = MapDocument.objects.create(name="Shared map", owner=None)
+
+        export = self.client.get("/api/account/").json()
+        self.assertEqual(export["user"]["username"], "erase-me")
+        self.assertEqual([s["name"] for s in export["spots"]], ["Mine"])
+        self.assertEqual([m["name"] for m in export["maps"]], ["My map"])
+        self.assertIn("exported_at", export)
+
+        # another account cannot reach it
+        self.client.force_login(other)
+        self.assertEqual(self.client.get("/api/account/").json()["spots"], [])
+
+        self.client.force_login(mine)
+        response = self.client.delete("/api/account/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["deleted"])
+        self.assertFalse(get_user_model().objects.filter(username="erase-me").exists())
+        self.assertFalse(MapDocument.objects.filter(pk=doc.pk).exists())
+        self.assertTrue(MapDocument.objects.filter(pk=shared.pk).exists())
+        self.assertEqual(self.client.get("/api/sync/").status_code, 401)
+
+    def test_account_endpoints_need_a_session(self):
+        self.assertEqual(self.client.get("/api/account/").status_code, 401)
+        self.assertEqual(self.client.delete("/api/account/").status_code, 401)
+
+    # ------------------------------------------------- self-hosted tiles / licences
+    def _png(self):
+        # 1x1 transparent PNG
+        import base64
+        return base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/"
+            "q842iQAAAABJRU5ErkJggg==")
+
+    def test_tiles_are_served_from_the_tiles_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tile = Path(tmp) / "9" / "150" / "192.png"
+            tile.parent.mkdir(parents=True)
+            tile.write_bytes(self._png())
+            with override_settings(HUNTMAP_TILES_DIR=tmp, HUNTMAP_TILES_MBTILES="",
+                                   HUNTMAP_TILE_URL=""):
+                response = self.client.get("/tiles/9/150/192.png")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "image/png")
+                self.assertIn("max-age=604800", response["Cache-Control"])
+                self.assertTrue(response.content.startswith(b"\x89PNG"))
+
+    def test_a_missing_tile_is_a_404_so_the_app_can_fall_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(HUNTMAP_TILES_DIR=tmp, HUNTMAP_TILES_MBTILES="",
+                                   HUNTMAP_TILE_URL=""):
+                response = self.client.get("/tiles/9/150/192.png")
+                self.assertEqual(response.status_code, 404)
+
+    def test_tiles_can_come_from_an_mbtiles_archive(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "region.mbtiles"
+            con = sqlite3.connect(path)
+            con.execute("CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, "
+                        "tile_row INTEGER, tile_data BLOB)")
+            con.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
+            # MBTiles stores rows flipped (TMS): y=192 at z=9 is row 319
+            con.execute("INSERT INTO tiles VALUES (9, 150, 319, ?)", (self._png(),))
+            con.execute("INSERT INTO metadata VALUES ('format', 'png')")
+            con.execute("INSERT INTO metadata VALUES ('maxzoom', '14')")
+            con.commit()
+            con.close()
+            with override_settings(HUNTMAP_TILES_MBTILES=str(path), HUNTMAP_TILES_DIR="",
+                                   HUNTMAP_TILE_URL=""):
+                ok = self.client.get("/tiles/9/150/192.png")
+                self.assertEqual(ok.status_code, 200, ok.content[:80])
+                self.assertFalse(self.client.get("/tiles/9/150/100.png").status_code == 200)
+
+    def test_meta_reports_the_tile_source_and_required_credit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tile = Path(tmp) / "0" / "0" / "0.png"
+            tile.parent.mkdir(parents=True)
+            tile.write_bytes(self._png())
+            with override_settings(HUNTMAP_TILES_DIR=tmp, HUNTMAP_TILES_MBTILES="",
+                                   HUNTMAP_TILE_URL="", HUNTMAP_COMMERCIAL=True):
+                data = self.client.get("/api/meta/").json()
+        self.assertTrue(data["commercial"])
+        self.assertEqual(data["tiles"]["source"], "directory")
+        self.assertEqual(data["tiles"]["url"], "/tiles/{z}/{x}/{y}.png")
+        self.assertIn("OpenStreetMap contributors", data["tiles"]["attribution"])
+        self.assertEqual(data["tiles"]["attribution_url"],
+                         "https://www.openstreetmap.org/copyright")
+
+    def test_meta_says_so_when_no_tiles_are_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(HUNTMAP_TILES_DIR=tmp, HUNTMAP_TILES_MBTILES="",
+                                   HUNTMAP_TILE_URL="", HUNTMAP_COMMERCIAL=False):
+                data = self.client.get("/api/meta/").json()
+        self.assertFalse(data["tiles"]["local"])
+        self.assertEqual(data["tiles"]["url"], "")
+
+    def test_app_shell_is_told_about_the_deployment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tile = Path(tmp) / "0" / "0" / "0.png"
+            tile.parent.mkdir(parents=True)
+            tile.write_bytes(self._png())
+            with override_settings(HUNTMAP_TILES_DIR=tmp, HUNTMAP_TILES_MBTILES="",
+                                   HUNTMAP_TILE_URL="", HUNTMAP_COMMERCIAL=True):
+                html = self.client.get("/").content.decode()
+        self.assertIn("__HUNTMAP_SERVER__", html)
+        self.assertIn('"commercial": true', html)
+        self.assertIn('"url": "/tiles/{z}/{x}/{y}.png"', html)
+
+    def test_licences_page_states_the_odbl_obligation(self):
+        response = self.client.get("/licences/")
+        self.assertEqual(response.status_code, 200)
+        page = response.content.decode()
+        self.assertIn("OpenStreetMap", page)
+        self.assertIn("Open Database Licence", page)
+        self.assertIn("openstreetmap.org/copyright", page)
+        self.assertIn("public domain", page.lower())
+
     def test_sync_requires_signing_in(self):
         self.assertEqual(self.client.get("/api/sync/").status_code, 401)
         response = self.client.post("/api/sync/", "{}", content_type="application/json")

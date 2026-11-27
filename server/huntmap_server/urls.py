@@ -10,6 +10,8 @@ urlpatterns = [
     path("library/", map_views.library_page, name="library"),
     path("library/<int:pk>/edit/", map_views.map_edit, name="map-edit"),
     path("upload/", map_views.upload_page, name="upload"),
+    path("licences/", map_views.licences_page, name="licences"),
+    path("tiles/<int:z>/<int:x>/<int:y>.png", map_views.tile_view, name="tile"),
     path("accounts/login/", auth_views.LoginView.as_view(
         template_name="maps/login.html", redirect_authenticated_user=True), name="login"),
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),

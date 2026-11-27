@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HUNTMAP_DB=/data/db.sqlite3 \
     HUNTMAP_MEDIA=/data/media \
     HUNTMAP_CERT_DIR=/data/certs \
+    HUNTMAP_TILES_DIR=/data/tiles \
     HUNTMAP_HTTPS=1 \
     HUNTMAP_PORT=8443 \
     HUNTMAP_ADMIN_USER=admin
@@ -35,9 +36,12 @@ COPY js ./js
 COPY vendor ./vendor
 COPY icons ./icons
 COPY server ./server
+# Licence notices travel with the image (see /licences/ in the running app).
+COPY THIRD_PARTY_LICENSES.md LEGAL.md ./
+COPY docs ./docs
 
 RUN useradd --uid 10001 --user-group --create-home --shell /usr/sbin/nologin huntmap \
-    && mkdir -p /data/media /data/certs \
+    && mkdir -p /data/media /data/certs /data/tiles \
     && chown -R huntmap:huntmap /data /srv/huntmap \
     && chmod +x /srv/huntmap/server/docker-entrypoint.sh
 

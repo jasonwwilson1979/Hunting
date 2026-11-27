@@ -723,6 +723,90 @@ def main():
             page.click("#sheetWaypoints [data-close]")
             page.wait_for_timeout(300)
 
+            # -------- self-hosted tiles + commercial (paid-site) mode --------
+            ctx2 = browser.new_context(viewport={"width": 390, "height": 844},
+                                       device_scale_factor=2)
+            ctx2.add_init_script("""window.__HUNTMAP_SERVER__ = {
+                upload: '/upload/',
+                commercial: true,
+                tiles: {
+                    url: '/tiles/{z}/{x}/{y}.png',
+                    maxzoom: 15,
+                    attribution: '\\u00a9 OpenStreetMap contributors',
+                    attribution_url: 'https://www.openstreetmap.org/copyright',
+                    name: 'My rendered tiles'
+                }
+            };""")
+            p3 = ctx2.new_page()
+            errors3 = []
+            p3.on("pageerror", lambda e: errors3.append(str(e)))
+            p3.goto(BASE + "/index.html", wait_until="load")
+            p3.wait_for_timeout(2200)
+            paid = p3.evaluate("""() => {
+                const T = window.Hunt.Tiles, D = window.Hunt.Data;
+                const ids = T.visibleIds();
+                const att = document.getElementById('attribution');
+                const link = att ? att.querySelector('a.att-link') : null;
+                return {
+                    commercial: T.COMMERCIAL,
+                    visible: ids,
+                    hidesOsm: ids.indexOf('osm') < 0 && ids.indexOf('topo') < 0,
+                    hidesEsri: ids.indexOf('esri_img') < 0 && ids.indexOf('esri_topo') < 0,
+                    hasLocal: ids.indexOf('local') >= 0,
+                    provider: D.settings.provider,
+                    tileUrl: T.tileUrl('local', 10, 300, 400),
+                    linkHref: link ? link.getAttribute('href') : null,
+                    linkText: link ? link.textContent : '',
+                    attribution: att ? att.textContent : ''
+                };
+            }""")
+            check("commercial mode is picked up from the server", paid["commercial"])
+            check("paid mode offers self-hosted tiles", paid["hasLocal"], paid["visible"])
+            check("paid mode hides community and Esri base maps",
+                  paid["hidesOsm"] and paid["hidesEsri"], paid["visible"])
+            check("self-hosted tiles become the default base map",
+                  paid["provider"] == "local", paid["provider"])
+            check("tiles are fetched from this server",
+                  paid["tileUrl"] == "/tiles/10/300/400.png", paid["tileUrl"])
+            check("the map credit is a link to the OSM licence",
+                  paid["linkHref"] == "https://www.openstreetmap.org/copyright" and
+                  "OpenStreetMap" in paid["linkText"], paid)
+            lic = p3.evaluate("""() => {
+                window.Hunt.App.closeSheets();
+                document.getElementById('btnMenu').click();
+                return true;
+            }""")
+            p3.wait_for_timeout(500)
+            p3.evaluate("""() => {
+                const btn = document.getElementById('btnOpenLicences');
+                if (btn) btn.click();
+            }""")
+            p3.wait_for_timeout(600)
+            licences = p3.evaluate("""() => {
+                const rows = [...document.querySelectorAll('#licenceList .item-title')]
+                    .map(e => e.textContent);
+                const note = document.querySelector('#licenceList .empty');
+                return { rows: rows, note: note ? note.textContent : '',
+                         sheet: document.getElementById('sheetLicences')
+                             .getAttribute('aria-hidden') };
+            }""")
+            check("the Licences sheet lists the sources", 
+                  any("USGS" in r for r in licences["rows"]), licences["rows"])
+            check("it says which sources are withheld and why",
+                  "Esri" in licences["note"], licences["note"])
+            # an old setting pointing at a now-forbidden provider must not stick
+            p3.evaluate("""async () => {
+                window.Hunt.Data.settings.provider = 'esri_img';
+                await window.Hunt.Data.saveSettings();
+            }""")
+            p3.reload(wait_until="load")
+            p3.wait_for_timeout(2000)
+            check("a stored forbidden base map is replaced on load",
+                  p3.evaluate("window.Hunt.Data.settings.provider") == "local",
+                  p3.evaluate("window.Hunt.Data.settings.provider"))
+            check("no JS errors with self-hosted tiles", not errors3, errors3[:2])
+            ctx2.close()
+
             page.screenshot(path=os.path.join(SHOTS, "04-final.png"))
             check("no uncaught JS errors at end", not page_errors, page_errors[:3])
             if console_errors:

@@ -11,37 +11,89 @@
     osm: {
       name: 'OpenStreetMap', short: 'OSM', sub: 'Community map \u00b7 public servers, limited use',
       url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19,
-      attribution: '\u00a9 OpenStreetMap contributors'
+      attribution: '\u00a9 OpenStreetMap contributors',
+      attribution_url: 'https://www.openstreetmap.org/copyright',
+      licence: 'ODbL 1.0 (community servers, not for paid or bulk use)', commercial: false
     },
     topo: {
       name: 'OpenTopoMap', short: 'Topo', sub: 'Contours and relief',
       url: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png', maxZoom: 17,
-      attribution: '\u00a9 OpenStreetMap, SRTM \u00b7 \u00a9 OpenTopoMap (CC-BY-SA)'
+      attribution: '\u00a9 OpenStreetMap, SRTM \u00b7 \u00a9 OpenTopoMap (CC-BY-SA)',
+      attribution_url: 'https://opentopomap.org/about',
+      licence: 'CC-BY-SA 4.0 (donated servers, not for paid use)', commercial: false
     },
     usgs_topo: {
       name: 'USGS Topo (US)', short: 'USGS', sub: 'Official US topo, public domain',
       url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
-      maxZoom: 16, attribution: 'USGS The National Map'
+      maxZoom: 16, attribution: 'USGS The National Map',
+      attribution_url: 'https://www.usgs.gov/programs/national-geospatial-program',
+      licence: 'Public domain (USGS)', commercial: true
     },
     usgs_img: {
       name: 'USGS Imagery (US)', short: 'Aerial', sub: 'Aerial imagery, public domain',
       url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
-      maxZoom: 16, attribution: 'USGS The National Map'
+      maxZoom: 16, attribution: 'USGS The National Map',
+      attribution_url: 'https://www.usgs.gov/programs/national-geospatial-program',
+      licence: 'Public domain (USGS)', commercial: true
     },
     esri_img: {
-      name: 'Esri World Imagery', short: 'Sat', sub: 'Satellite, worldwide',
+      name: 'Esri World Imagery', short: 'Sat', sub: 'Satellite, worldwide \u00b7 needs an Esri licence',
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      maxZoom: 19, attribution: 'Esri, Maxar, Earthstar Geographics'
+      maxZoom: 19, attribution: 'Esri, Maxar, Earthstar Geographics',
+      attribution_url: 'https://www.esri.com/en-us/legal/terms/full-master-agreement',
+      licence: 'Proprietary (Esri terms - not redistributable)', commercial: false
     },
     esri_topo: {
-      name: 'Esri World Topo', short: 'Topo', sub: 'Topo, worldwide',
+      name: 'Esri World Topo', short: 'Topo', sub: 'Topo, worldwide \u00b7 needs an Esri licence',
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-      maxZoom: 19, attribution: 'Esri, HERE, Garmin, USGS'
+      maxZoom: 19, attribution: 'Esri, HERE, Garmin, USGS',
+      attribution_url: 'https://www.esri.com/en-us/legal/terms/full-master-agreement',
+      licence: 'Proprietary (Esri terms - not redistributable)', commercial: false
     },
-    none: { name: 'None (PDF maps only)', short: 'Off', sub: 'Use only your own maps', url: null, maxZoom: 0, attribution: '' }
+    none: { name: 'None (PDF maps only)', short: 'Off', sub: 'Use only your own maps', url: null,
+      maxZoom: 0, attribution: '', licence: '', commercial: true }
   };
 
-  T.provider = function (id) { return T.PROVIDERS[id] || T.PROVIDERS.osm; };
+  /* A server can offer its own rendered tiles (see server/maps/tiles.py). Those are
+     a Produced Work from OpenStreetMap data, so the credit is mandatory - and they
+     are the only world-wide base map that is safe to put behind a paid service. */
+  T.LOCAL_CFG = (window.__HUNTMAP_SERVER__ && window.__HUNTMAP_SERVER__.tiles) || null;
+  T.COMMERCIAL = !!(window.__HUNTMAP_SERVER__ && window.__HUNTMAP_SERVER__.commercial);
+  if (T.LOCAL_CFG && T.LOCAL_CFG.url) {
+    T.PROVIDERS.local = {
+      name: T.LOCAL_CFG.name || 'This server',
+      short: 'Local',
+      sub: 'Self-hosted tiles \u00b7 no external map server',
+      url: T.LOCAL_CFG.url,
+      maxZoom: T.LOCAL_CFG.maxzoom || 16,
+      attribution: T.LOCAL_CFG.attribution || '\u00a9 OpenStreetMap contributors',
+      attribution_url: T.LOCAL_CFG.attribution_url || 'https://www.openstreetmap.org/copyright',
+      licence: 'ODbL 1.0 \u00b7 Produced Work from OpenStreetMap data',
+      commercial: true,
+      local: true
+    };
+  }
+
+  /** Ids the picker may show: everything, or only what a paid service may use. */
+  T.visibleIds = function () {
+    return Object.keys(T.PROVIDERS).filter(function (id) {
+      const p = T.PROVIDERS[id];
+      if (!T.COMMERCIAL) return true;
+      return p.commercial !== false;
+    });
+  };
+
+  /** Is this base map allowed here? Guards a settings value from an older build. */
+  T.allowed = function (id) {
+    const p = T.PROVIDERS[id];
+    if (!p) return false;
+    return !T.COMMERCIAL || p.commercial !== false;
+  };
+
+  T.provider = function (id) { return T.PROVIDERS[id] || T.PROVIDERS[Object.keys(T.PROVIDERS)[0]]; };
+
+  T.attributionUrl = function (id) { return T.provider(id).attribution_url || ''; };
+  T.licenceFor = function (id) { return T.provider(id).licence || ''; };
 
   /** HTTP failure of the last tile request (403 = provider refused, see policy). */
   T.lastError = null;
@@ -61,12 +113,14 @@
   T.policyFor = function (id) { return POLITE[id] || { parallel: 4, delay: 30 }; };
 
   /**
-   * Sensible default base map for a location. USGS topo is public domain and
-   * caching-friendly, so prefer it in North America; OSM elsewhere.
+   * Sensible default base map for a location. Self-hosted tiles win (no external
+   * dependency, licence-clean); then USGS topo, which is public domain and
+   * caching-friendly in North America; OSM elsewhere.
    */
   T.defaultProviderFor = function (lat, lon) {
+    if (T.PROVIDERS.local && T.allowed('local')) return 'local';
     if (lat != null && lon != null && lat > 14 && lat < 73 && lon > -170 && lon < -50) return 'usgs_topo';
-    return 'osm';
+    return T.allowed('osm') ? 'osm' : 'none';
   };
 
   /** A provider is "blocked" for 10 minutes after it sent a block page. */

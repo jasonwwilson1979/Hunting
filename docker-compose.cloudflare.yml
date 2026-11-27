@@ -46,6 +46,14 @@ services:
       HUNTMAP_MAX_UPLOAD: "${HUNTMAP_MAX_UPLOAD:-95000000}"
       HUNTMAP_WORKERS: "${HUNTMAP_WORKERS:-1}"
       HUNTMAP_THREADS: "${HUNTMAP_THREADS:-8}"
+      # Self-hosted base tiles (licensing) - see README "Self-hosted base maps".
+      HUNTMAP_TILES_DIR: "${HUNTMAP_TILES_DIR:-/data/tiles}"
+      HUNTMAP_TILES_MBTILES: "${HUNTMAP_TILES_MBTILES:-}"
+      HUNTMAP_TILE_URL: "${HUNTMAP_TILE_URL:-}"
+      HUNTMAP_TILE_MAXZOOM: "${HUNTMAP_TILE_MAXZOOM:-16}"
+      HUNTMAP_TILE_ATTRIBUTION: "${HUNTMAP_TILE_ATTRIBUTION:-}"
+      # 1 = only licence-safe base maps (your tiles + USGS); needed before you charge.
+      HUNTMAP_COMMERCIAL: "${HUNTMAP_COMMERCIAL:-0}"
     volumes:
       - huntmap-data:/data
     # No published ports: only the tunnel reaches it. To reach it on the LAN as

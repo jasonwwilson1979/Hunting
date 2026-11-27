@@ -10,6 +10,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.12.0] — 2026-11-27
+
+### Added
+- **Self-hosted base maps.** The server can serve your own raster tiles at
+  `/tiles/{z}/{x}/{y}.png` from a folder (`HUNTMAP_TILES_DIR`), from a raster
+  `.mbtiles` archive (`HUNTMAP_TILES_MBTILES`), or delegate to a tile server you run
+  (`HUNTMAP_TILE_URL`). Week-long cache headers, `404` for a miss so the app can fall
+  back, and `manage.py tiles_info` to see what is configured.
+- **"This server / Local" base map** in the app: default when tiles exist, credited
+  with the required “© OpenStreetMap contributors” line.
+- **`HUNTMAP_COMMERCIAL=1`** (paid-site mode): the picker only offers your own tiles,
+  USGS (public domain) and “no base map”; Esri and the community OSM/OpenTopoMap
+  servers are hidden, listed as withheld, and a stored choice of one is replaced at
+  start-up so an old setting cannot keep breaking the licence.
+- **Licence notice**: `/licences/` page on the server, **Tools → Licences** in the
+  app, `THIRD_PARTY_LICENSES.md`, and a map credit that is now a real link to
+  <https://www.openstreetmap.org/copyright> (ODbL safe harbour — visible, not behind a
+  menu).
+- **Data rights**: `GET /api/account/` exports the account (maps, places,
+  georeferences, spots, tracks) as JSON and `DELETE /api/account/` erases the account,
+  its files, spots and tracks — with **Export my data** / **Delete my account**
+  buttons in *Tools → Account*. This is what makes a privacy policy honest.
+- `LEGAL.md` (checklist for charging money: ToS, privacy, refunds, tax, takedown,
+  attribution duties), `docs/terms-of-service.md` and `docs/privacy-policy.md`
+  templates.
+
+### Changed
+- Tiles served by a public community server are marked in the picker with their
+  licence, so it is obvious which choices are not for paid use.
+- Default base map order: your tiles → USGS → OSM (or “no base map” in commercial mode).
+
+### Tests
+- Server: tiles from a folder, 404 on a miss, MBTiles (with the TMS row flip), `/api/meta/`
+  with and without tiles, the injected app config, the licences page, account export
+  and erasure (49 tests, up from 40).
+- `tests/e2e.py`: commercial mode hides the right sources, self-hosted tiles become the
+  default, the credit is a link, the Licences sheet lists sources and withholdings, and a
+  stored forbidden base map is replaced on load (105 checks, up from 95).
+
 ## [1.11.0] — 2026-11-27
 
 ### Added

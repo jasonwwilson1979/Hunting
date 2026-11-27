@@ -48,10 +48,11 @@
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
     'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
     'accountState', 'accountNote', 'signServer', 'btnAccountCheck', 'accountDiag',
-    'btnAccountSync', 'accountAdminLink', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'btnAccountSync', 'accountAdminLink', 'btnAccountExport', 'btnAccountDelete', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'btnLayerUpload', 'metaDeviceNote', 'metaFoot', 'appVersion', 'btnAppUpdate',
     'btnWpSelect', 'wpSelectBar', 'wpSelectCount', 'btnWpSelectAll', 'btnWpSelectNone',
-    'btnWpSelectDelete',
+    'btnWpSelectDelete', 'providerNote', 'providerLicence', 'licenceList', 'btnOpenLicences',
+    'licencePageLink',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -100,6 +101,13 @@
 
     D.load().then(function () {
       if (!D.settings.provider) {
+        const v = D.settings.lastView;
+        D.settings.provider = T.defaultProviderFor(v ? v.lat : 44, v ? v.lon : -71.5);
+        D.saveSettings();
+      }
+      if (!T.allowed(D.settings.provider)) {
+        // e.g. an older build left "osm" set and this server is in commercial
+        // mode: never keep a base map the licence does not cover.
         const v = D.settings.lastView;
         D.settings.provider = T.defaultProviderFor(v ? v.lat : 44, v ? v.lon : -71.5);
         D.saveSettings();
@@ -399,6 +407,8 @@
       : hasServer ? 'Not signed in' : 'No HuntMap server on this address';
     el.btnAccountSignIn.hidden = !!user;
     el.btnAccountSignOut.hidden = !user;
+    el.btnAccountExport.hidden = !user;
+    el.btnAccountDelete.hidden = !user;
     el.accountNote.textContent = user
       ? 'Your uploads and your spots/tracks belong to this account: sign in on another phone or PC ' +
         'and they come along.'
@@ -1046,6 +1056,45 @@
     Promise.all(jobs).then(done, done);
   }
 
+  /* ------------------------------- licences ------------------------------- */
+  function renderLicences() {
+    if (!el.licenceList) return;
+    el.licenceList.innerHTML = '';
+    T.visibleIds().forEach(function (id) {
+      const p = T.PROVIDERS[id];
+      const row = U.el('div', { class: 'item' });
+      const main = U.el('div', { class: 'item-main' });
+      main.appendChild(U.el('div', { class: 'item-title', text: p.name }));
+      main.appendChild(U.el('div', { class: 'item-sub',
+        text: [p.licence, p.attribution].filter(Boolean).join(' \u00b7 ') }));
+      row.appendChild(main);
+      if (p.attribution_url) {
+        const link = U.el('a', { class: 'mini-btn', href: p.attribution_url,
+          target: '_blank', rel: 'noopener', text: 'Source' });
+        row.appendChild(link);
+      }
+      el.licenceList.appendChild(row);
+    });
+    const hidden = Object.keys(T.PROVIDERS).filter(function (id) {
+      return T.visibleIds().indexOf(id) < 0;
+    });
+    if (hidden.length) {
+      el.licenceList.appendChild(U.el('div', { class: 'empty',
+        text: 'Not offered on this server: ' +
+          hidden.map(function (id) { return T.PROVIDERS[id].name; }).join(', ') +
+          ' \u2014 their terms do not allow this kind of use.' }));
+    }
+    if (el.providerLicence) {
+      el.providerLicence.textContent = 'Base map: ' + T.provider(D.settings.provider).name +
+        (T.licenceFor(D.settings.provider) ? ' \u00b7 ' + T.licenceFor(D.settings.provider) : '');
+    }
+    if (el.licencePageLink) {
+      const cfg = window.__HUNTMAP_SERVER__;
+      el.licencePageLink.href = (cfg && cfg.licences_url) || '/licences/';
+      el.licencePageLink.hidden = !cfg;
+    }
+  }
+
   /** Spots or tracks arrived from another device: redraw everything using them. */
   function onSpotsMerged() {
     if (!map) return;
@@ -1459,7 +1508,7 @@
   function renderProviders() {
     if (!el.providerList) return;
     el.providerList.innerHTML = '';
-    Object.keys(T.PROVIDERS).forEach(function (id) {
+    T.visibleIds().forEach(function (id) {
       const p = T.PROVIDERS[id];
       const label = U.el('label', { class: 'prov' });
       const radio = U.el('input', { type: 'radio', name: 'provider', value: id });
@@ -1483,9 +1532,26 @@
       const main = U.el('div', { class: 'prov-main' });
       main.appendChild(U.el('div', { text: p.name }));
       if (p.sub) main.appendChild(U.el('div', { class: 'prov-sub', text: p.sub }));
+      if (p.licence) main.appendChild(U.el('div', { class: 'prov-sub', text: p.licence }));
       label.appendChild(main);
       el.providerList.appendChild(label);
     });
+    if (el.providerNote) {
+      const hidden = Object.keys(T.PROVIDERS).filter(function (id) {
+        return T.visibleIds().indexOf(id) < 0;
+      }).length;
+      el.providerNote.hidden = !T.COMMERCIAL;
+      el.providerNote.textContent = T.COMMERCIAL
+        ? 'This server runs in commercial mode, so ' + hidden + ' base map' +
+          (hidden === 1 ? '' : 's') + ' that may not be used in a paid service (Esri, the ' +
+          'community OSM/OpenTopoMap tile servers) are hidden. See Licences for details.'
+        : '';
+    }
+    if (el.providerLicence) {
+      const cur = T.provider(D.settings.provider);
+      el.providerLicence.textContent = 'Base map: ' + cur.name +
+        (T.licenceFor(D.settings.provider) ? ' \u00b7 ' + T.licenceFor(D.settings.provider) : '');
+    }
   }
   function renderOverlays() {
     if (!el.overlayList) return;
@@ -2662,6 +2728,36 @@
     U.on(el.btnAccountCheck, 'click', checkServer);
     U.on(el.btnLayerUpload, 'click', uploadLayer);
     U.on(el.btnAppUpdate, 'click', updateApp);
+    U.on(el.btnAccountExport, 'click', function () {
+      // Straight to the server: the browser handles the JSON download, so it works
+      // even if this page is later updated.
+      window.open(H.Sync ? H.Sync.base + 'account/' : '/api/account/', '_blank', 'noopener');
+    });
+    U.on(el.btnAccountDelete, 'click', function () {
+      if (!H.Sync || !H.Sync.state.user) return;
+      U.confirm('Delete your account?',
+        'This removes <b>' + U.escapeHtml(H.Sync.state.user) + '</b>, your uploaded maps, ' +
+        'waypoints and tracks from the server. Spots on this phone stay until you delete them. ' +
+        'This cannot be undone.', 'Delete account').then(function (ok) {
+        if (!ok) return;
+        fetch((H.Sync.base || '/api/') + 'account/', {
+          method: 'DELETE', credentials: 'same-origin', cache: 'no-store'
+        }).then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          H.Sync.state.user = null;
+          H.Sync.state.maps = [];
+          renderAccount();
+          renderSync();
+          U.toast('Account deleted', 'ok', 3200);
+        }).catch(function (err) {
+          U.toast('Could not delete the account: ' + ((err && err.message) || err), 'err', 4200);
+        });
+      });
+    });
+    U.on(el.btnOpenLicences, 'click', function () {
+      renderLicences();
+      openSheet('sheetLicences');
+    });
     U.on(el.btnAccountSync, 'click', function () {
       if (!H.Sync) return;
       if (!H.Sync.state.user) {

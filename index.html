@@ -287,6 +287,8 @@
   <div class="sheet-body">
     <h3 class="group-title">Base map</h3>
     <div class="provider-list" id="providerList"></div>
+    <p class="note small" id="providerNote" hidden></p>
+    <p class="note small" id="providerLicence"></p>
     <label class="switch-row"><span>Show base map</span><input type="checkbox" id="toggleTiles" checked></label>
 
     <div id="syncSection" hidden>
@@ -358,6 +360,10 @@
         <button class="btn" id="btnAccountSync" type="button">Sync spots</button>
         <a class="muted small" id="accountAdminLink" href="/admin/" target="_blank" rel="noopener" hidden>Open /admin/</a>
       </div>
+      <div class="row gap wrap">
+        <button class="btn" id="btnAccountExport" type="button" hidden>Export my data</button>
+        <button class="btn danger" id="btnAccountDelete" type="button" hidden>Delete my account</button>
+      </div>
       <p class="note small mono" id="accountDiag" hidden></p>
     </div>
 
@@ -370,6 +376,7 @@
       <button class="tool-btn" id="btnOpenBackup" type="button"><svg class="i"><use href="#i-share"/></svg><span>Backup</span></button>
       <button class="tool-btn" id="btnOpenHelp" type="button"><svg class="i"><use href="#i-info"/></svg><span>Help</span></button>
       <button class="tool-btn" id="btnOpenInstall" type="button"><svg class="i"><use href="#i-download"/></svg><span>Install</span></button>
+      <button class="tool-btn" id="btnOpenLicences" type="button"><svg class="i"><use href="#i-info"/></svg><span>Licences</span></button>
     </div>
 
     <h3 class="group-title">Settings</h3>
@@ -407,6 +414,23 @@
       and reloads the newest files from the server. Your spots, tracks and maps are kept.</p>
   </div>
 </section>
+<section class="sheet" id="sheetLicences" aria-hidden="true">
+  <header class="sheet-head">
+    <h2>Map sources &amp; licences</h2>
+    <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="sheet-body">
+    <p class="muted small">What this app draws, where it comes from, and the terms attached.</p>
+    <div class="list" id="licenceList"></div>
+    <div class="row gap wrap">
+      <a class="btn" id="licencePageLink" href="/licences/" target="_blank" rel="noopener">Full notice</a>
+      <a class="btn" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap</a>
+    </div>
+    <p class="note small">Your own spots, tracks and uploaded maps are yours. The server keeps them
+      under your account and does not sell or share them.</p>
+  </div>
+</section>
+
 <section class="sheet" id="sheetSun" aria-hidden="true">
   <header class="sheet-head">
     <h2>Sun &amp; moon</h2>
