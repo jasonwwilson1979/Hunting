@@ -2,6 +2,7 @@
 import json
 import math
 import mimetypes
+import time
 from pathlib import Path
 
 from django.conf import settings
@@ -18,7 +19,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST, require_safe
 
 from .forms import MapEditForm, MapUploadForm
-from .models import ALLOWED_EXTS, MapDocument
+from .models import ALLOWED_EXTS, MapDocument, SyncedSpot, SyncedTrack
 
 APP_DIR = Path(settings.HUNTMAP_APP_DIR).resolve()
 APP_SUBDIRS = {"css", "js", "icons", "vendor"}
@@ -294,7 +295,7 @@ def api_health(request):
     return JsonResponse({
         "ok": True,
         "server": "huntmap",
-        "version": 2,
+        "version": 3,
         "maps": MapDocument.objects.count(),
     })
 
@@ -308,7 +309,7 @@ def api_maps(request):
     docs = _filtered(visible_maps(request.user), request.GET)
     return JsonResponse({
         "server": "huntmap",
-        "version": 2,
+        "version": 3,
         "user": request.user.username if request.user.is_authenticated else None,
         "require_auth": getattr(settings, "HUNTMAP_REQUIRE_AUTH", False),
         "maps": [map_json(request, doc) for doc in docs],
@@ -448,6 +449,110 @@ def api_register(request):
                          "first_account": promoted}, status=201)
 
 
+def _ms(value, default=0):
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _spot_json(spot):
+    return {
+        "id": spot.remote_id, "name": spot.name, "type": spot.type, "notes": spot.notes,
+        "lat": spot.lat, "lon": spot.lon, "alt": spot.alt,
+        "createdAt": spot.created_ms, "updatedAt": spot.updated_ms, "deleted": spot.deleted,
+    }
+
+
+def _track_json(track):
+    return {
+        "id": track.remote_id, "name": track.name, "points": track.points or [],
+        "createdAt": track.created_ms, "updatedAt": track.updated_ms, "deleted": track.deleted,
+    }
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def api_sync(request):
+    """Spots and tracks for the signed-in account.
+
+    POST takes the phone's whole set and merges it (newest ``updatedAt`` wins,
+    ``deleted: true`` removes), then answers with everything the account has - so
+    a device only needs one round trip to push and pull.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in to sync spots and tracks",
+                             "code": "auth-required"}, status=401)
+    user = request.user
+
+    if request.method == "POST":
+        try:
+            payload = json.loads((request.body or b"{}").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse({"error": "Body must be JSON"}, status=400)
+        if not isinstance(payload, dict):
+            return JsonResponse({"error": "Body must be a JSON object"}, status=400)
+
+        for entry in payload.get("spots") or []:
+            if not isinstance(entry, dict):
+                continue
+            remote_id = str(entry.get("id") or "").strip()[:64]
+            lat, lon = _num(entry.get("lat")), _num(entry.get("lon"))
+            if not remote_id or lat is None or lon is None:
+                continue
+            spot, created = SyncedSpot.objects.get_or_create(
+                owner=user, remote_id=remote_id, defaults={"lat": lat, "lon": lon})
+            updated = _ms(entry.get("updatedAt"))
+            if not created and updated <= spot.updated_ms:
+                continue                       # the copy on the server is newer
+            spot.name = str(entry.get("name") or "")[:190]
+            spot.type = str(entry.get("type") or "")[:24]
+            spot.notes = str(entry.get("notes") or "")[:5000]
+            spot.lat, spot.lon = lat, lon
+            alt = _num(entry.get("alt"))
+            spot.alt = alt
+            spot.created_ms = _ms(entry.get("createdAt"), updated)
+            spot.updated_ms = updated
+            spot.deleted = bool(entry.get("deleted"))
+            spot.save()
+
+        for entry in payload.get("tracks") or []:
+            if not isinstance(entry, dict):
+                continue
+            remote_id = str(entry.get("id") or "").strip()[:64]
+            if not remote_id:
+                continue
+            points = entry.get("points") or []
+            if not isinstance(points, list):
+                points = []
+            track, created_track = SyncedTrack.objects.get_or_create(
+                owner=user, remote_id=remote_id)
+            updated = _ms(entry.get("updatedAt"))
+            if not created_track and updated <= track.updated_ms:
+                continue
+            track.name = str(entry.get("name") or "")[:190]
+            track.points = points[:20000]
+            track.created_ms = _ms(entry.get("createdAt"), updated)
+            track.updated_ms = updated
+            track.deleted = bool(entry.get("deleted"))
+            track.save()
+
+    return JsonResponse({
+        "server_time": int(time.time() * 1000),
+        "user": user.username,
+        "spots": [_spot_json(s) for s in SyncedSpot.objects.filter(owner=user)],
+        "tracks": [_track_json(t) for t in SyncedTrack.objects.filter(owner=user)],
+    })
+
+
+def _num(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 @require_GET
 def api_diag(request):
     """What a deployment needs to know when a sign-in does not work."""
@@ -456,7 +561,7 @@ def api_diag(request):
     users = User.objects.filter(is_active=True).count()
     return JsonResponse({
         "server": "huntmap",
-        "version": 2,
+        "version": 3,
         "users": users,
         "staff": staff,
         "accounts_ready": staff > 0,
@@ -464,8 +569,14 @@ def api_diag(request):
                  "becomes the admin, or set HUNTMAP_ADMIN_PASSWORD.") if staff == 0 else "",
         "require_auth": bool(getattr(settings, "HUNTMAP_REQUIRE_AUTH", False)),
         "maps": MapDocument.objects.count(),
+        "maps_mine": (visible_maps(request.user).count()
+                      if request.user.is_authenticated else None),
         "signed_in": request.user.username if request.user.is_authenticated else None,
         "session": request.session.session_key is not None,
+        "spots": (SyncedSpot.objects.filter(owner=request.user, deleted=False).count()
+                  if request.user.is_authenticated else None),
+        "tracks": (SyncedTrack.objects.filter(owner=request.user, deleted=False).count()
+                   if request.user.is_authenticated else None),
     })
 
 

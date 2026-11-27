@@ -140,6 +140,18 @@ def main():
             check("account card starts signed out",
                   "Not signed in" in page.inner_text("#accountState"),
                   page.inner_text("#accountState"))
+            sync_btn = page.evaluate("""(() => {
+                const b = document.getElementById('btnAccountSync');
+                return { exists: !!b, hidden: b ? b.hidden : null, text: b ? b.textContent : '',
+                         title: b ? b.getAttribute('title') : '',
+                         version: (document.getElementById('appVersion') || {}).textContent,
+                         ver: (self.HUNTMAP_VERSION || {}).app };
+            })()""")
+            check("Sync spots is visible even when signed out",
+                  bool(sync_btn["exists"] and sync_btn["hidden"] is False), sync_btn)
+            check("the app shows its version in Tools",
+                  bool(sync_btn["ver"]) and ("v" + str(sync_btn["ver"])) in (sync_btn["version"] or ""),
+                  sync_btn)
             page.evaluate("document.getElementById('btnAccountSignIn').click()")
             page.wait_for_timeout(600)
             page.fill("#signUser", "scout")
@@ -284,6 +296,50 @@ def main():
                   uploaded.get("place") == "Vermont \u00b7 Windsor \u00b7 Norwich",
                   uploaded.get("place"))
 
+            # every map on the device can be renamed / given a place
+            opened = page.evaluate("""(() => {
+                const rows = [...document.querySelectorAll('#overlayList .item')];
+                const btn = rows.length ? rows[0].querySelector('.mini-btn') : null;
+                if (!btn) return { rows: rows.length, edit: false };
+                btn.click();
+                const sheet = document.getElementById('sheetMapMeta');
+                const out = {
+                    rows: rows.length, edit: true,
+                    open: sheet.getAttribute('aria-hidden') === 'false',
+                    state: !!document.getElementById('metaState'),
+                    county: !!document.getElementById('metaCounty'),
+                    city: !!document.getElementById('metaCity')
+                };
+                document.getElementById('btnMetaCancel').click();
+                return out;
+            })()""")
+            check("a device map has Edit with name / state / county / city",
+                  bool(opened.get("edit") and opened.get("open") and opened.get("state")
+                       and opened.get("county") and opened.get("city")), opened)
+
+            made = page.evaluate("""async () => {
+                const D = window.Hunt.Data, S = window.Hunt.Sync;
+                const w = D.newWaypoint({ name: 'Sync Ridge', type: 'deer', lat: 44.31, lon: -71.41 });
+                await D.saveWaypoint(w);
+                const json = await S.syncNow(true);
+                return { id: w.id, spots: json ? (json.spots || []).length : -1,
+                         err: S.syncState.error, user: S.state.user };
+            }""")
+            check("a spot syncs to the account", made["spots"] >= 1 and not made["err"], made)
+
+            # the "add map" form carries the place fields
+            page.evaluate("document.getElementById('btnAddMap').click()")
+            page.wait_for_timeout(600)
+            fields = page.evaluate("""(() => ({
+                name: !!document.getElementById('mapName'),
+                state: !!document.getElementById('mapState'),
+                county: !!document.getElementById('mapCounty'),
+                city: !!document.getElementById('mapCity')
+            }))()""")
+            check("add-map form has name / state / county / city", all(fields.values()), fields)
+            page.evaluate("document.getElementById('scrim').click()")
+            page.wait_for_timeout(300)
+
             ctx3 = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True,
                                        has_touch=True, device_scale_factor=2,
                                        geolocation={"latitude": 44.12, "longitude": -71.56},
@@ -305,6 +361,15 @@ def main():
             check("another device sees the uploaded map after signing in",
                   "Phone Upload" in seen, seen[:200])
             check("the other device sees its place too", "Vermont" in seen, seen[:200])
+            try:
+                page2.wait_for_function(
+                    "window.Hunt.Data.waypoints.some(function (w) { return w.name === 'Sync Ridge'; })",
+                    timeout=12000)
+                spot_seen = True
+            except Exception:
+                spot_seen = False
+            check("another device receives the spots after signing in", spot_seen,
+                  page2.evaluate("window.Hunt.Data.waypoints.map(function (w) { return w.name; })"))
             ctx3.close()
 
             check("no JS errors at the end", not errors, errors[:3])

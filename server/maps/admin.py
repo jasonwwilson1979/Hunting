@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MapDocument
+from .models import MapDocument, SyncedSpot, SyncedTrack
 
 
 @admin.register(MapDocument)
@@ -36,3 +36,21 @@ class MapDocumentAdmin(admin.ModelAdmin):
         if obj.file and (not change or "file" in form.changed_data):
             obj.rehash()
         super().save_model(request, obj, form, change)
+
+
+@admin.register(SyncedSpot)
+class SyncedSpotAdmin(admin.ModelAdmin):
+    list_display = ("name", "type", "owner", "lat", "lon", "deleted", "updated_ms")
+    list_filter = ("type", "deleted", "owner")
+    search_fields = ("name", "notes", "remote_id")
+
+
+@admin.register(SyncedTrack)
+class SyncedTrackAdmin(admin.ModelAdmin):
+    list_display = ("name", "owner", "point_count", "deleted", "updated_ms")
+    list_filter = ("deleted", "owner")
+    search_fields = ("name", "remote_id")
+
+    @admin.display(description="Points")
+    def point_count(self, obj):
+        return len(obj.points or [])

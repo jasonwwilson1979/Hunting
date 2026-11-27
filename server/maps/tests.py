@@ -256,7 +256,71 @@ class MapLibraryTests(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.name, "Private")
 
-    # ------------------------------------------------------- proxy / csrf headers
+    # ---------------------------------------------------------- spots / tracks sync
+    def test_sync_requires_signing_in(self):
+        self.assertEqual(self.client.get("/api/sync/").status_code, 401)
+        response = self.client.post("/api/sync/", "{}", content_type="application/json")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "auth-required")
+
+    def _spot(self, rid="wp_1", name="Stand", updated=1000, deleted=False, lat=44.1, lon=-71.5):
+        return {"id": rid, "name": name, "type": "stand", "notes": "n", "lat": lat, "lon": lon,
+                "alt": None, "createdAt": 500, "updatedAt": updated, "deleted": deleted}
+
+    def test_spots_round_trip_and_newest_wins(self):
+        self.client.force_login(self.staff)
+        first = self.client.post("/api/sync/", json.dumps({"spots": [self._spot()]}),
+                                 content_type="application/json")
+        self.assertEqual(first.status_code, 200, first.content)
+        payload = first.json()
+        self.assertEqual(len(payload["spots"]), 1)
+        self.assertEqual(payload["spots"][0]["name"], "Stand")
+
+        # an older edit does not clobber the newer one
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot(name="Stale", updated=900)]}),
+                         content_type="application/json")
+        payload = self.client.get("/api/sync/").json()
+        self.assertEqual(payload["spots"][0]["name"], "Stand")
+
+        # a newer edit does
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot(name="Big oak", updated=2000)]}),
+                         content_type="application/json")
+        self.assertEqual(self.client.get("/api/sync/").json()["spots"][0]["name"], "Big oak")
+
+    def test_deleted_spots_are_kept_as_tombstones(self):
+        self.client.force_login(self.staff)
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot()]}),
+                         content_type="application/json")
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot(updated=3000, deleted=True)]}),
+                         content_type="application/json")
+        payload = self.client.get("/api/sync/").json()
+        self.assertEqual(len(payload["spots"]), 1)
+        self.assertTrue(payload["spots"][0]["deleted"])
+
+    def test_second_device_receives_the_spots(self):
+        self.client.force_login(self.staff)
+        self.client.post("/api/sync/", json.dumps({
+            "spots": [self._spot("wp_a", "North ridge")],
+            "tracks": [{"id": "trk_1", "name": "Morning walk", "updatedAt": 1200,
+                        "points": [{"lat": 44.1, "lon": -71.5}, {"lat": 44.11, "lon": -71.51}]}],
+        }), content_type="application/json")
+
+        other = Client()                       # a different phone, same account
+        self.assertTrue(other.login(username="tester", password="huntmap-pass"))
+        payload = other.get("/api/sync/").json()
+        self.assertEqual([s["name"] for s in payload["spots"]], ["North ridge"])
+        self.assertEqual(len(payload["tracks"][0]["points"]), 2)
+        self.assertEqual(payload["user"], "tester")
+
+    def test_sync_is_per_account(self):
+        mine = get_user_model().objects.create_user("mine", password="mine-pass-123")
+        theirs = get_user_model().objects.create_user("theirs", password="theirs-pass-123")
+        self.client.force_login(mine)
+        self.client.post("/api/sync/", json.dumps({"spots": [self._spot("wp_x", "Private")]}),
+                         content_type="application/json")
+        self.client.force_login(theirs)
+        self.assertEqual(self.client.get("/api/sync/").json()["spots"], [])
+
     def _csrf_login(self, client, remote_addr):
         """POST the admin login form the way a browser behind a TLS proxy would."""
         page = client.get("/admin/login/", HTTP_X_FORWARDED_PROTO="https",

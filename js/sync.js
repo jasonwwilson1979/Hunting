@@ -70,7 +70,9 @@
     return postJson('login/', { username: username, password: password })
       .then(function (json) {
         SY.state.user = json.user || null;
-        return SY.probe().then(function () { return json; });
+        return SY.probe().then(function () {
+          return SY.syncNow(true).then(function () { return json; });
+        });
       });
   };
 
@@ -78,7 +80,9 @@
     return postJson('register/', { username: username, password: password })
       .then(function (json) {
         SY.state.user = json.user || null;
-        return SY.probe().then(function () { return json; });
+        return SY.probe().then(function () {
+          return SY.syncNow(true).then(function () { return json; });
+        });
       });
   };
 
@@ -133,6 +137,156 @@
   /** Ask the server what it knows: accounts, version, maps. */
   SY.diag = function () {
     return api('diag/');
+  };
+
+  /* ---------------------- spots and tracks (per account) ---------------------- */
+  SY.syncState = { at: 0, spots: 0, tracks: 0, error: null, busy: false, signedOut: false };
+  /** Called by app.js after a merge so the map/lists can redraw. */
+  SY.onMerged = null;
+
+  function spotPayload() {
+    return D.waypoints.map(function (w) {
+      return {
+        id: w.id, name: w.name, type: w.type, notes: w.notes,
+        lat: w.lat, lon: w.lon, alt: w.alt == null ? null : w.alt,
+        createdAt: w.createdAt, updatedAt: w.updatedAt
+      };
+    });
+  }
+
+  function trackPayload() {
+    return D.tracks.map(function (t) {
+      return {
+        id: t.id, name: t.name, points: t.points || [],
+        createdAt: t.createdAt, updatedAt: t.updatedAt
+      };
+    });
+  }
+
+  /** Remember that something was deleted, so the server removes it too. */
+  SY.markDeleted = function (kind, id) {
+    return DB.kvGet('syncDeleted', null).then(function (state) {
+      state = state || { spots: [], tracks: [] };
+      const list = state[kind === 'tracks' ? 'tracks' : 'spots'];
+      if (!list.some(function (d) { return d.id === id; })) {
+        list.push({ id: id, updatedAt: Date.now() });
+      }
+      return DB.kvSet('syncDeleted', state);
+    }).catch(function () {});
+  };
+
+  /** Debounced push after a change (offline-safe: it simply fails quietly). */
+  SY.queueSync = function () {
+    if (!SY.state.enabled || !SY.state.user) return;
+    if (SY._syncTimer) clearTimeout(SY._syncTimer);
+    SY._syncTimer = setTimeout(function () {
+      SY._syncTimer = 0;
+      SY.syncNow(true);
+    }, 1200);
+  };
+
+  /**
+   * Push every local spot/track, then take back the merged set.
+   * Newest updatedAt wins per record; deletions travel as tombstones.
+   */
+  SY.syncNow = function (quiet) {
+    if (!SY.state.enabled) return Promise.resolve(null);
+    if (!SY.state.user) {
+      SY.syncState.signedOut = true;
+      return Promise.resolve(null);
+    }
+    if (SY.syncState.busy) return Promise.resolve(null);
+    SY.syncState.busy = true;
+    SY.syncState.signedOut = false;
+
+    return DB.kvGet('syncDeleted', null).then(function (deleted) {
+      deleted = deleted || { spots: [], tracks: [] };
+      const body = {
+        spots: spotPayload().concat((deleted.spots || []).map(function (d) {
+          return { id: d.id, deleted: true, updatedAt: d.updatedAt };
+        })),
+        tracks: trackPayload().concat((deleted.tracks || []).map(function (d) {
+          return { id: d.id, deleted: true, updatedAt: d.updatedAt };
+        }))
+      };
+      return api('sync/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    }).then(function (json) {
+      return SY._applyRemote(json).then(function () {
+        return DB.kvSet('syncDeleted', { spots: [], tracks: [] });
+      }).then(function () {
+        SY.syncState.at = Date.now();
+        SY.syncState.spots = (json.spots || []).filter(function (s) { return !s.deleted; }).length;
+        SY.syncState.tracks = (json.tracks || []).filter(function (t) { return !t.deleted; }).length;
+        SY.syncState.error = null;
+        SY.syncState.busy = false;
+        if (SY.onMerged) { try { SY.onMerged(json); } catch (e) { console.error(e); } }
+        if (!quiet) notify();
+        return json;
+      });
+    }).catch(function (err) {
+      SY.syncState.busy = false;
+      SY.syncState.error = (err && err.code === 'auth-required')
+        ? 'sign in to sync' : ((err && err.message) || String(err));
+      if (!quiet) notify();
+      return null;
+    });
+  };
+
+  /** Merge the server's set into the local one (newest updatedAt wins). */
+  SY._applyRemote = function (json) {
+    const jobs = [];
+    const localSpots = {};
+    const localTracks = {};
+    D.waypoints.forEach(function (w) { localSpots[w.id] = w; });
+    D.tracks.forEach(function (t) { localTracks[t.id] = t; });
+
+    (json.spots || []).forEach(function (r) {
+      const local = localSpots[r.id];
+      if (r.deleted) {
+        if (local) {
+          D.waypoints = D.waypoints.filter(function (w) { return w.id !== r.id; });
+          if (D.settings.targetId === r.id) { D.settings.targetId = null; D.saveSettings(); }
+          jobs.push(DB.del('waypoints', r.id));
+        }
+        return;
+      }
+      if (local && (r.updatedAt || 0) <= (local.updatedAt || 0)) return;
+      const spot = {
+        id: r.id, name: r.name || 'Spot', type: (D.TYPES[r.type] ? r.type : 'wp'),
+        notes: r.notes || '', lat: r.lat, lon: r.lon, alt: r.alt == null ? null : r.alt,
+        createdAt: r.createdAt || Date.now(), updatedAt: r.updatedAt || Date.now()
+      };
+      D.waypoints = D.waypoints.filter(function (w) { return w.id !== r.id; });
+      D.waypoints.push(spot);
+      jobs.push(DB.put('waypoints', spot));
+    });
+
+    (json.tracks || []).forEach(function (r) {
+      const local = localTracks[r.id];
+      if (r.deleted) {
+        if (local) {
+          D.tracks = D.tracks.filter(function (t) { return t.id !== r.id; });
+          if (D.activeTrack && D.activeTrack.id === r.id) D.activeTrack = null;
+          jobs.push(DB.del('tracks', r.id));
+        }
+        return;
+      }
+      if (local && (r.updatedAt || 0) <= (local.updatedAt || 0)) return;
+      const track = {
+        id: r.id, name: r.name || 'Track', points: r.points || [],
+        createdAt: r.createdAt || Date.now(), updatedAt: r.updatedAt || Date.now()
+      };
+      D.tracks = D.tracks.filter(function (t) { return t.id !== r.id; });
+      D.tracks.push(track);
+      jobs.push(DB.put('tracks', JSON.parse(JSON.stringify(track))));
+    });
+
+    D.waypoints.sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    return Promise.all(jobs).catch(function () {});
   };
 
   /** The maps that pass the panel's search / state / county filters. */

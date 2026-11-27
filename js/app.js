@@ -46,7 +46,8 @@
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
     'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
     'accountState', 'accountNote', 'signServer', 'btnAccountCheck', 'accountDiag',
-    'accountAdminLink', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'btnAccountSync', 'accountAdminLink', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'btnLayerUpload', 'metaDeviceNote', 'metaFoot', 'appVersion', 'btnAppUpdate',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -75,6 +76,7 @@
   App.init = function () {
     cacheEls();
     applySettings();
+    renderVersion();
     bindGlobal();
     map = new H.MapView(el.map, {
       onTap: onMapTap,
@@ -108,7 +110,10 @@
       updateGpsHud(GPS.state);
       if (H.Sync) {
         H.Sync.onChange = onSyncChange;
-        H.Sync.probe();
+        H.Sync.onMerged = onSpotsMerged;
+        H.Sync.probe().then(function (ok) {
+          if (ok && H.Sync.state.user) H.Sync.syncNow(true);
+        });
       }
     });
 
@@ -239,7 +244,9 @@
     } else if (busyIds.length) {
       status = 'Downloading ' + busyIds.length + ' map' + (busyIds.length === 1 ? '' : 's') + '\u2026';
     } else if (!maps.length) {
-      status = 'No maps on the server yet.';
+      status = sync.state.user
+        ? 'Your library is empty \u2014 maps you add with \u201cCopy to my PC library\u201d ticked land here.'
+        : 'No maps on the server yet.';
     } else {
       const pending = sync.pending().length;
       status = maps.length + ' map' + (maps.length === 1 ? '' : 's') + ' on the PC' +
@@ -253,6 +260,11 @@
     if (!shown.length) {
       if (maps.length) {
         el.syncList.appendChild(U.el('div', { class: 'empty', text: 'No maps match those filters.' }));
+      } else if (sync.state.user) {
+        el.syncList.appendChild(U.el('div', { class: 'empty',
+          text: 'Nothing here yet. Add a map on this phone (Maps \u2192 Add PDF or image) and leave ' +
+            '\u201cCopy to my PC library\u201d ticked, or upload one at /upload/. Then come back and ' +
+            'press Refresh.' }));
       }
       return;
     }
@@ -348,12 +360,17 @@
     el.accountDiag.textContent = 'Checking\u2026';
     H.Sync.diag().then(function (d) {
       const bits = [
+        'app v' + VERSION.app,
         'server v' + d.version,
         d.users + ' account' + (d.users === 1 ? '' : 's'),
         d.staff ? (d.staff + ' admin') : 'NO admin',
-        d.maps + ' map' + (d.maps === 1 ? '' : 's')
+        d.maps + ' map' + (d.maps === 1 ? '' : 's') + ' in the library'
       ];
       if (d.signed_in) bits.push('signed in as ' + d.signed_in);
+      if (d.signed_in && d.spots != null) {
+        bits.push(d.spots + ' spot' + (d.spots === 1 ? '' : 's'));
+        bits.push(d.tracks + ' track' + (d.tracks === 1 ? '' : 's'));
+      }
       if (d.require_auth) bits.push('library locked');
       el.accountDiag.textContent = bits.join(' \u00b7 ') + (d.hint ? '\n' + d.hint : '');
       el.accountAdminLink.hidden = !d.signed_in || !d.staff;
@@ -379,10 +396,30 @@
     el.btnAccountSignIn.hidden = !!user;
     el.btnAccountSignOut.hidden = !user;
     el.accountNote.textContent = user
-      ? 'Your uploads belong to this account; maps without an owner are shared with everyone.'
+      ? 'Your uploads and your spots/tracks belong to this account: sign in on another phone or PC ' +
+        'and they come along.'
       : hasServer
-        ? 'Sign in to keep your map library separate and to upload maps from this phone. You can also create an account here.'
+        ? 'Sign in to sync spots and tracks between devices and to keep your maps in your own ' +
+          'library. Right now ' + D.waypoints.length + ' spot' + (D.waypoints.length === 1 ? '' : 's') +
+          ' and ' + D.tracks.length + ' track' + (D.tracks.length === 1 ? '' : 's') +
+          ' live on this phone only. You can also create an account here.'
         : 'Accounts live on the HuntMap server. Open the app from your server address (or the tunnel hostname) to sign in.';
+    if (el.btnAccountSync) {
+      // Always visible once a server is known: a missing button is worse than a
+      // button that explains why it cannot do anything yet.
+      el.btnAccountSync.hidden = !hasServer;
+      const s = (sync && sync.syncState) || {};
+      el.btnAccountSync.textContent = s.busy ? 'Syncing\u2026' : 'Sync spots';
+      el.btnAccountSync.title = user
+        ? 'Push your spots and tracks, then take back anything new from your other devices'
+        : 'Sign in to sync your spots and tracks between devices';
+      if (user && s.at && !el.accountDiag.hidden) {
+        // keep the last result visible when the panel is open
+        el.accountDiag.textContent = 'Last sync ' + U.fmtAge(Date.now() - s.at) +
+          ' \u00b7 ' + s.spots + ' spot' + (s.spots === 1 ? '' : 's') +
+          ' \u00b7 ' + s.tracks + ' track' + (s.tracks === 1 ? '' : 's');
+      }
+    }
   }
 
   function fillPlaceSelect(select, anyLabel, values, current) {
@@ -400,8 +437,74 @@
     });
   }
 
+  /** Edit a map that lives on this device (name / place), linked to the server if it has one. */
+  function openLayerMeta(layer) {
+    S.metaLayer = layer;
+    S.metaTarget = null;
+    const signedIn = !!(H.Sync && H.Sync.state.user);
+    el.metaSub.textContent = (layer.kind === 'pdf' ? 'PDF' : 'Image') +
+      (layer.remoteId ? ' \u00b7 in your library' : ' \u00b7 on this device only');
+    el.metaName.value = layer.name || '';
+    el.metaState.value = layer.state || '';
+    el.metaCounty.value = layer.county || '';
+    el.metaCity.value = layer.city || '';
+    el.metaPage.value = layer.page || 1;
+    el.metaNotes.value = layer.notes || '';
+    const canUpload = !layer.remoteId && signedIn;
+    el.btnLayerUpload.hidden = !canUpload;
+    el.metaDeviceNote.hidden = !!layer.remoteId;
+    el.metaDeviceNote.textContent = signedIn
+      ? 'This map lives on this device only. Copy it to your library so your other devices can get it.'
+      : 'This map lives on this device only. Sign in to keep a copy on your server.';
+    el.metaFoot.hidden = !layer.remoteId;
+    openSheet('sheetMapMeta');
+  }
+
+  /** Copy a map that is only on this device up to the account's library. */
+  function uploadLayer() {
+    const layer = S.metaLayer;
+    if (!layer || !H.Sync) return;
+    if (!H.Sync.state.user) { U.toast('Sign in first', 'err'); return; }
+    el.btnLayerUpload.disabled = true;
+    el.btnLayerUpload.textContent = 'Uploading\u2026';
+    DB.blobGet('mapimg:' + layer.id).then(function (blob) {
+      if (!blob) throw new Error('the page image is no longer stored');
+      const ext = (blob.type === 'image/jpeg') ? 'jpg' : 'png';
+      const file = new File([blob], (layer.name || 'map').replace(/[^\w.-]+/g, '-') + '.' + ext,
+        { type: blob.type || 'image/png' });
+      return H.Sync.upload(file, {
+        name: el.metaName.value.trim() || layer.name,
+        page: 1,
+        state: el.metaState.value.trim(),
+        county: el.metaCounty.value.trim(),
+        city: el.metaCity.value.trim(),
+        notes: (el.metaNotes.value.trim() || '') +
+          (layer.kind === 'pdf' ? ' (page ' + (layer.page || 1) + ' as an image)' : '')
+      });
+    }).then(function (json) {
+      layer.remoteId = json.id;
+      layer.state = json.state || el.metaState.value.trim();
+      layer.county = json.county || el.metaCounty.value.trim();
+      layer.city = json.city || el.metaCity.value.trim();
+      return D.saveLayer(layer).then(function () {
+        if (layer.calib && H.Sync.pushCalibration) H.Sync.pushCalibration(layer);
+        el.btnLayerUpload.disabled = false;
+        el.btnLayerUpload.textContent = 'Copy to my PC library';
+        closeSheets();
+        renderOverlays();
+        U.toast('Uploaded to your library', 'ok');
+        H.Sync.probe();
+      });
+    }).catch(function (err) {
+      el.btnLayerUpload.disabled = false;
+      el.btnLayerUpload.textContent = 'Copy to my PC library';
+      U.toast('Upload failed: ' + ((err && err.message) || err), 'err', 4200);
+    });
+  }
+
   function openMapMeta(remote) {
     S.metaTarget = remote;
+    S.metaLayer = null;
     el.metaSub.textContent = (remote.kind || 'map').toUpperCase() +
       (remote.size ? ' \u00b7 ' + H.Sync.humanSize(remote.size) : '') +
       (remote.owner ? ' \u00b7 ' + remote.owner : '');
@@ -411,23 +514,49 @@
     el.metaCity.value = remote.city || '';
     el.metaPage.value = remote.page || 1;
     el.metaNotes.value = remote.notes || '';
+    el.btnLayerUpload.hidden = true;
+    el.metaDeviceNote.hidden = true;
+    el.metaFoot.hidden = false;
     openSheet('sheetMapMeta');
   }
 
   function saveMapMeta() {
     const target = S.metaTarget;
-    if (!target || !H.Sync) return;
+    const layer = S.metaLayer;
     const name = el.metaName.value.trim();
     if (!name) { U.toast('Give the map a name', 'err'); return; }
-    el.btnMetaSave.disabled = true;
-    H.Sync.updateMeta(target.id, {
+    const fields = {
       name: name,
       page: Math.max(1, parseInt(el.metaPage.value, 10) || 1),
       state: el.metaState.value.trim(),
       county: el.metaCounty.value.trim(),
       city: el.metaCity.value.trim(),
       notes: el.metaNotes.value.trim()
-    }).then(function (json) {
+    };
+
+    if (layer) {
+      // Local map: save here, and push the same details if it is in the library.
+      layer.name = fields.name;
+      layer.page = fields.page;
+      layer.state = fields.state;
+      layer.county = fields.county;
+      layer.city = fields.city;
+      layer.notes = fields.notes;
+      D.saveLayer(layer).then(function () {
+        renderOverlays();
+        map.setOverlays(D.layers);
+        closeSheets();
+        U.toast('Saved "' + fields.name + '"', 'ok');
+        if (layer.remoteId && H.Sync && H.Sync.state.user) {
+          H.Sync.updateMeta(layer.remoteId, fields).catch(function () {});
+        }
+      });
+      return;
+    }
+
+    if (!target || !H.Sync) return;
+    el.btnMetaSave.disabled = true;
+    H.Sync.updateMeta(target.id, fields).then(function (json) {
       el.btnMetaSave.disabled = false;
       closeSheets();
       U.toast('Saved "' + json.name + '"', 'ok');
@@ -880,6 +1009,48 @@
     openMarkSheet(ll, 'tap');
   }
 
+  /* ------------------------------- versions ------------------------------- */
+  const VERSION = (self.HUNTMAP_VERSION || { app: 'dev', date: '', shell: 'huntmap-shell-dev' });
+
+  function renderVersion() {
+    if (!el.appVersion) return;
+    el.appVersion.textContent = 'HuntMap v' + VERSION.app +
+      (VERSION.date ? ' \u00b7 ' + VERSION.date : '');
+  }
+
+  /** Throw away the cached shell and take the newest files from the server. */
+  function updateApp() {
+    const done = function () { location.reload(); };
+    const jobs = [];
+    if (self.caches) {
+      jobs.push(caches.keys().then(function (keys) {
+        return Promise.all(keys.filter(function (k) { return k.indexOf('huntmap-shell-') === 0; })
+          .map(function (k) { return caches.delete(k); }));
+      }).catch(function () {}));
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (r) { return r.unregister(); }));
+      }).catch(function () {}));
+    }
+    U.toast('Fetching the newest version\u2026', 'ok', 2500);
+    Promise.all(jobs).then(done, done);
+  }
+
+  /** Spots or tracks arrived from another device: redraw everything using them. */
+  function onSpotsMerged() {
+    if (!map) return;
+    map.setWaypoints(D.waypoints);
+    map.setTracks(tracksForMap());
+    map.invalidate();
+    renderWaypoints();
+    renderTracks();
+    updateWpBadge();
+    updateTrackHud();
+    const target = D.settings.targetId ? D.getWaypoint(D.settings.targetId) : null;
+    if (target) setTarget(target);
+  }
+
   /* ---------------------------- crosshair placement ---------------------------- */
   function togglePinMode(force) {
     S.pinMode = force == null ? !S.pinMode : !!force;
@@ -1247,11 +1418,20 @@
       row.appendChild(eye);
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: layer.name }));
+      const placeBits = [layer.state, layer.county, layer.city].filter(Boolean).join(' \u00b7 ');
       main.appendChild(U.el('div', { class: 'item-sub',
-        text: (layer.kind === 'pdf' ? 'PDF' : 'Image') + (layer.page ? ' p' + layer.page : '') +
+        text: (placeBits ? placeBits + ' \u00b7 ' : '') +
+          (layer.kind === 'pdf' ? 'PDF' : 'Image') + (layer.page ? ' p' + layer.page : '') +
           ' \u00b7 ' + Math.round((layer.opacity == null ? 0.92 : layer.opacity) * 100) + '% \u00b7 ' +
           (layer.calib ? 'georeferenced' : 'needs calibration') }));
       row.appendChild(main);
+      const edit = U.el('button', { class: 'mini-btn', type: 'button', text: 'Edit',
+        title: 'Name, state, county, town' });
+      edit.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        openLayerMeta(layer);
+      });
+      row.appendChild(edit);
       const del = U.el('button', { class: 'icon-btn small', type: 'button', title: 'Remove map' });
       del.innerHTML = '<svg class="i"><use href="#i-trash"/></svg>';
       del.addEventListener('click', function (ev) {
@@ -1390,6 +1570,7 @@
     el.mapUploadChk.checked = false;
     const sync = H.Sync;
     const signedIn = !!(sync && sync.state.enabled && sync.state.user);
+    el.mapUploadChk.checked = signedIn;      // signed in: keep a copy on the server by default
     el.mapUploadBox.hidden = !signedIn;
     if (signedIn) {
       el.mapUploadNote.textContent = 'Signed in as ' + sync.state.user +
@@ -2072,16 +2253,17 @@
   /* ------------------------------- diagnostics ------------------------------- */
   function refreshDiag() {
     const bits = [
-      'HuntMap 1.0',
+      'HuntMap v' + VERSION.app,
       (location.protocol === 'https:' ? 'https' : location.protocol.replace(':', '')) + ' \u00b7 ' +
         (U.isSecure() ? 'secure' : 'NOT secure'),
       navigator.onLine ? 'online' : 'offline',
       'GPS ' + gpsStatusText(GPS.state),
-      'maps ' + D.layers.length,
+      'spots ' + D.waypoints.length + ' \u00b7 tracks ' + D.tracks.length + ' \u00b7 maps ' + D.layers.length,
       'PDF ' + (PM.available() ? 'ready' : 'missing'),
       'SW ' + ('serviceWorker' in navigator ? 'yes' : 'no')
     ];
     if (el.diagInfo) el.diagInfo.textContent = bits.join(' \u00b7 ');
+    renderVersion();
   }
 
   function refreshStorage() {
@@ -2375,6 +2557,30 @@
     });
     U.on(el.btnAccountSignIn, 'click', openSignInSheet);
     U.on(el.btnAccountCheck, 'click', checkServer);
+    U.on(el.btnLayerUpload, 'click', uploadLayer);
+    U.on(el.btnAppUpdate, 'click', updateApp);
+    U.on(el.btnAccountSync, 'click', function () {
+      if (!H.Sync) return;
+      if (!H.Sync.state.user) {
+        el.accountDiag.hidden = false;
+        el.accountDiag.textContent = 'Spots and tracks sync through your account \u2014 sign in first.';
+        openSheet('sheetSignIn');
+        return;
+      }
+      el.accountDiag.hidden = false;
+      el.accountDiag.textContent = 'Syncing spots and tracks\u2026';
+      H.Sync.syncNow(false).then(function (json) {
+        if (!json) {
+          el.accountDiag.textContent = 'Sync failed: ' + (H.Sync.syncState.error || 'see the maps panel');
+          return;
+        }
+        const s = H.Sync.syncState;
+        el.accountDiag.textContent = 'Synced: ' + s.spots + ' spot' + (s.spots === 1 ? '' : 's') +
+          ' \u00b7 ' + s.tracks + ' track' + (s.tracks === 1 ? '' : 's');
+        U.toast('Spots and tracks synced', 'ok');
+        renderAccount();
+      });
+    });
     U.on(el.btnAccountSignOut, 'click', function () {
       if (!H.Sync) return;
       H.Sync.logout().then(function () {

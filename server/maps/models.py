@@ -28,6 +28,54 @@ def content_type_for(filename):
     return CONTENT_TYPES.get(ext) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
+class SyncedSpot(models.Model):
+    """A spot copied from a phone so every signed-in device sees it.
+
+    ``remote_id`` is the id the app generated; ``updated_ms`` is the phone's
+    ``updatedAt`` (epoch ms) and is what decides which copy wins.
+    """
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                              related_name="huntmap_spots")
+    remote_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=190, blank=True)
+    type = models.CharField(max_length=24, blank=True)
+    notes = models.TextField(blank=True)
+    lat = models.FloatField()
+    lon = models.FloatField()
+    alt = models.FloatField(null=True, blank=True)
+    created_ms = models.BigIntegerField(default=0)
+    updated_ms = models.BigIntegerField(default=0, db_index=True)
+    deleted = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = [("owner", "remote_id")]
+        ordering = ["name", "remote_id"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.name or self.remote_id, self.type)
+
+
+class SyncedTrack(models.Model):
+    """A recorded track, same rules as SyncedSpot."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                              related_name="huntmap_tracks")
+    remote_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=190, blank=True)
+    points = models.JSONField(default=list, blank=True)
+    created_ms = models.BigIntegerField(default=0)
+    updated_ms = models.BigIntegerField(default=0, db_index=True)
+    deleted = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = [("owner", "remote_id")]
+        ordering = ["name", "remote_id"]
+
+    def __str__(self):
+        return self.name or self.remote_id
+
+
 class MapDocument(models.Model):
     """A map file (PDF, TIFF or image) kept on the PC for the phone to download."""
 

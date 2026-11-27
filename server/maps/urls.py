@@ -10,6 +10,7 @@ urlpatterns = [
     path("maps/<int:pk>/calibration", views.api_calibration, name="map-calibration"),
     path("me/", views.api_me, name="api-me"),
     path("diag/", views.api_diag, name="api-diag"),
+    path("sync/", views.api_sync, name="api-sync"),
     path("login/", views.api_login, name="api-login"),
     path("logout/", views.api_logout, name="api-logout"),
     path("register/", views.api_register, name="api-register"),

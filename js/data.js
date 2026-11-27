@@ -146,12 +146,14 @@
     const i = D.waypoints.findIndex(function (x) { return x.id === w.id; });
     if (i >= 0) D.waypoints[i] = w; else D.waypoints.push(w);
     D.waypoints.sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    if (H.Sync) H.Sync.queueSync();
     return DB.put('waypoints', w).then(function () { return w; });
   };
 
   D.deleteWaypoint = function (id) {
     D.waypoints = D.waypoints.filter(function (w) { return w.id !== id; });
     if (D.settings.targetId === id) { D.settings.targetId = null; D.saveSettings(); }
+    if (H.Sync) { H.Sync.markDeleted('spots', id); H.Sync.queueSync(); }
     return DB.del('waypoints', id);
   };
 
@@ -224,7 +226,9 @@
     if (!trk) return Promise.resolve(null);
     trk.active = false;
     trk.endedAt = Date.now();
+    trk.updatedAt = Date.now();
     D.activeTrack = null;
+    if (H.Sync) H.Sync.queueSync();
     return DB.put('tracks', JSON.parse(JSON.stringify(trk))).then(function () { return trk; });
   };
 
@@ -236,6 +240,7 @@
   D.deleteTrack = function (id) {
     D.tracks = D.tracks.filter(function (t) { return t.id !== id; });
     if (D.activeTrack && D.activeTrack.id === id) D.activeTrack = null;
+    if (H.Sync) { H.Sync.markDeleted('tracks', id); H.Sync.queueSync(); }
     return DB.del('tracks', id);
   };
 

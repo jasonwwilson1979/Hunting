@@ -366,6 +366,16 @@ def main():
             except Exception:
                 sw_ready = False
             check("service worker controls the page", sw_ready)
+            ver = page.evaluate("""async () => {
+                const v = self.HUNTMAP_VERSION || {};
+                const keys = await caches.keys();
+                return { app: v.app, shell: v.shell, keys: keys,
+                         about: (document.getElementById('appVersion') || {}).textContent || '' };
+            }""")
+            check("the app knows its version",
+                  bool(ver["app"]) and ("v" + str(ver["app"])) in ver["about"], ver)
+            check("the cache name comes from version.js",
+                  bool(ver["shell"]) and ver["shell"] in ver["keys"], ver)
             ctx.set_offline(True)
             page.reload(wait_until="load")
             page.wait_for_timeout(1800)
