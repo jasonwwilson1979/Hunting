@@ -23,7 +23,9 @@
     downloading: false,
     lastFixSave: 0,
     defaultView: false,     // true until the user (or a GPS fix) chooses a view
-    calibS0: 0              // overlay scale when the align sheet opened (slider base)
+    calibS0: 0,             // overlay scale when the align sheet opened (slider base)
+    wpSelectMode: false,    // Spots panel: tap rows to tick them, then delete in bulk
+    wpSelected: []          // ids ticked in that mode
   };
 
   /* ------------------------------- boot ------------------------------- */
@@ -48,6 +50,8 @@
     'accountState', 'accountNote', 'signServer', 'btnAccountCheck', 'accountDiag',
     'btnAccountSync', 'accountAdminLink', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'btnLayerUpload', 'metaDeviceNote', 'metaFoot', 'appVersion', 'btnAppUpdate',
+    'btnWpSelect', 'wpSelectBar', 'wpSelectCount', 'btnWpSelectAll', 'btnWpSelectNone',
+    'btnWpSelectDelete',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -688,6 +692,11 @@
     });
     S.sheet = null;
     el.scrim.classList.remove('on');
+    if (S.wpSelectMode) {          // leaving the Spots panel ends select mode
+      S.wpSelectMode = false;
+      S.wpSelected = [];
+      if (el.btnWpSelect) el.btnWpSelect.classList.remove('on');
+    }
     bindMeasureButtons();
   }
   App.closeSheets = closeSheets;
@@ -1172,12 +1181,80 @@
     });
   }
 
+  /** Spots that pass the search box, nearest first. */
+  function visibleWaypoints() {
+    const st = GPS.state;
+    const filter = (el.wpSearch.value || '').trim();
+    return D.sortedWaypoints(st.lat, st.lon, filter);
+  }
+
+  function renderWpSelectBar(shown) {
+    if (!el.wpSelectBar) return;
+    const selecting = !!S.wpSelectMode;
+    el.wpSelectBar.hidden = !selecting;
+    el.btnWpSelect.classList.toggle('on', selecting);
+    el.btnWpSelect.title = selecting ? 'Done selecting' : 'Select spots to delete';
+    if (!selecting) return;
+    const live = {};
+    D.waypoints.forEach(function (w) { live[w.id] = 1; });
+    S.wpSelected = S.wpSelected.filter(function (id) { return live[id]; });
+    const n = S.wpSelected.length;
+    el.wpSelectCount.textContent = n + ' of ' + shown.length + ' selected';
+    el.btnWpSelectDelete.disabled = n === 0;
+    el.btnWpSelectDelete.textContent = n ? 'Delete ' + n : 'Delete';
+  }
+
+  function setWpSelectMode(on) {
+    S.wpSelectMode = !!on;
+    S.wpSelected = [];
+    renderWaypoints();
+  }
+
+  function toggleWpSelect(id) {
+    const i = S.wpSelected.indexOf(id);
+    if (i >= 0) S.wpSelected.splice(i, 1); else S.wpSelected.push(id);
+    const on = S.wpSelected.indexOf(id) >= 0;
+    // Update the row in place: re-rendering the list here would swallow a second
+    // tap that is already on its way.
+    U.$$('#wpList .item').forEach(function (row) {
+      if (row.getAttribute('data-wp') !== id) return;
+      row.classList.toggle('sel', on);
+      const box = row.querySelector('.item-check');
+      if (box) box.checked = on;
+    });
+    renderWpSelectBar(visibleWaypoints());
+  }
+
+  function deleteSelectedSpots() {
+    const ids = S.wpSelected.slice();
+    if (!ids.length) return;
+    const names = ids.map(function (id) { const w = D.getWaypoint(id); return w ? w.name : ''; })
+      .filter(Boolean);
+    const what = names.length > 3
+      ? U.escapeHtml(names.slice(0, 3).join(', ')) + ' and ' + (names.length - 3) + ' more'
+      : U.escapeHtml(names.join(', ') || 'these spots');
+    U.confirm('Delete ' + ids.length + ' spot' + (ids.length === 1 ? '' : 's') + '?',
+      what + '<br>This cannot be undone.', 'Delete').then(function (ok) {
+      if (!ok) return;
+      D.deleteWaypoints(ids).then(function (n) {
+        S.wpSelectMode = false;
+        S.wpSelected = [];
+        map.setWaypoints(D.waypoints);
+        if (map.target && ids.indexOf(map.target.id) >= 0) setTarget(null);
+        renderWaypoints();
+        updateWpBadge();
+        U.toast('Deleted ' + n + ' spot' + (n === 1 ? '' : 's'), 'ok');
+      });
+    });
+  }
+
   function renderWaypoints() {
     if (!el.wpList) return;
     const st = GPS.state;
-    const filter = (el.wpSearch.value || '').trim();
-    const list = D.sortedWaypoints(st.lat, st.lon, filter);
+    const list = visibleWaypoints();
+    const selecting = !!S.wpSelectMode;
     el.wpCount.textContent = D.waypoints.length ? '(' + D.waypoints.length + ')' : '';
+    renderWpSelectBar(list);
     el.wpList.innerHTML = '';
     if (!list.length) {
       el.wpList.appendChild(U.el('div', { class: 'empty',
@@ -1187,24 +1264,40 @@
     }
     list.forEach(function (w) {
       const info = D.TYPES[w.type] || D.TYPES.wp;
-      const row = U.el('div', { class: 'item item-split' });
-      const hit = U.el('button', { class: 'item-hit', type: 'button',
-        title: 'Show ' + (w.name || 'this spot') + ' on the map' });
-      const pin = U.el('span', { class: 'pin-mini', style: 'background:' + info.color, title: info.label });
-      pin.appendChild(D.iconFor(w.type, 'wp-ic pin-ic'));
-      hit.appendChild(pin);
+      const pin = U.el('span', { class: 'pin-mini', style: 'color:' + info.color, title: info.label });
+      pin.appendChild(D.shapeFor(w.type, 'wp-shape'));
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: w.name || 'Spot' }));
       const bits = [info.label, G.formatCoord(w.lat, w.lon, D.settings.coordFormat)];
       if (w.notes) bits.push(w.notes);
       main.appendChild(U.el('div', { class: 'item-sub', text: bits.join(' \u00b7 ') }));
-      hit.appendChild(main);
-      if (st.lat != null) {
-        const d = G.distance(st.lat, st.lon, w.lat, w.lon);
-        const brg = G.bearing(st.lat, st.lon, w.lat, w.lon);
-        hit.appendChild(U.el('div', { class: 'item-right',
-          text: U.fmtDist(d) + '\n' + Math.round(brg) + '\u00b0' }));
+      const right = st.lat != null
+        ? U.el('div', { class: 'item-right', text: U.fmtDist(G.distance(st.lat, st.lon, w.lat, w.lon)) +
+          '\n' + Math.round(G.bearing(st.lat, st.lon, w.lat, w.lon)) + '\u00b0' })
+        : null;
+
+      if (selecting) {
+        // Whole row is a label, so tapping anywhere ticks the spot.
+        const checked = S.wpSelected.indexOf(w.id) >= 0;
+        const row = U.el('label', { class: 'item item-split' + (checked ? ' sel' : ''),
+          'data-wp': w.id });
+        const box = U.el('input', { class: 'item-check', type: 'checkbox' });
+        box.checked = checked;
+        box.addEventListener('change', function () { toggleWpSelect(w.id); });
+        row.appendChild(box);
+        row.appendChild(pin);
+        row.appendChild(main);
+        if (right) row.appendChild(right);
+        el.wpList.appendChild(row);
+        return;
       }
+
+      const row = U.el('div', { class: 'item item-split' });
+      const hit = U.el('button', { class: 'item-hit', type: 'button',
+        title: 'Show ' + (w.name || 'this spot') + ' on the map' });
+      hit.appendChild(pin);
+      hit.appendChild(main);
+      if (right) hit.appendChild(right);
       // Tapping the row flies the map to the spot; the Edit button opens the sheet.
       hit.addEventListener('click', function () { goToSpot(w); });
       row.appendChild(hit);
@@ -1242,8 +1335,8 @@
     map.invalidate();
     const info = D.TYPES[w.type] || D.TYPES.wp;
     el.wptTitle.innerHTML = '';
-    const badge = U.el('span', { class: 'title-ic', style: 'background:' + info.color });
-    badge.appendChild(D.iconFor(w.type));
+    const badge = U.el('span', { class: 'title-ic shape-ic', style: 'color:' + info.color });
+    badge.appendChild(D.shapeFor(w.type, 'wp-shape'));
     el.wptTitle.appendChild(badge);
     el.wptTitle.appendChild(document.createTextNode(w.name || 'Spot'));
     el.wptName.value = w.name || '';
@@ -2489,6 +2582,16 @@
     U.on(el.btnMarkSave, 'click', saveMark);
     U.on(el.btnMarkCancel, 'click', closeSheets);
     U.on(el.wpSearch, 'input', U.debounce(renderWaypoints, 160));
+    U.on(el.btnWpSelect, 'click', function () { setWpSelectMode(!S.wpSelectMode); });
+    U.on(el.btnWpSelectAll, 'click', function () {
+      S.wpSelected = visibleWaypoints().map(function (w) { return w.id; });
+      renderWaypoints();
+    });
+    U.on(el.btnWpSelectNone, 'click', function () {
+      S.wpSelected = [];
+      renderWaypoints();
+    });
+    U.on(el.btnWpSelectDelete, 'click', deleteSelectedSpots);
     U.on(el.btnWpExport, 'click', exportWpGpx);
     U.on(el.btnWpImport, 'click', function () { el.fileGpx.click(); });
     U.on(el.btnWptSave, 'click', saveWptEdits);

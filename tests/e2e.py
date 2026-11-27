@@ -631,18 +631,94 @@ def main():
                 const rows = [...document.querySelectorAll('#wpList .item')];
                 const r = rows.find(x => x.textContent.indexOf('Buck Ridge') >= 0);
                 if (!r) return null;
-                const svg = r.querySelector('.pin-mini svg.wp-ic');
+                const svg = r.querySelector('.pin-mini svg.wp-shape');
                 return {
-                    icons: r.querySelectorAll('.pin-mini svg.wp-ic').length,
-                    paths: svg ? svg.children.length : 0,
+                    icons: r.querySelectorAll('.pin-mini svg.wp-shape').length,
+                    paths: svg ? svg.querySelectorAll('path').length : 0,
                     sub: (r.querySelector('.item-sub') || {}).textContent || ''
                 };
             })()""")
             check("deer spot draws its icon in the list",
                   bool(row) and row["icons"] == 1 and row["paths"] >= 3, row)
             check("list row names the type", "Deer" in (row or {}).get("sub", ""), row)
+
+            # ---------------- shaped map pins ----------------
+            shapes = page.evaluate("""async () => {
+                const D = window.Hunt.Data;
+                const types = Object.keys(D.TYPES);
+                const bad = types.filter(function (t) {
+                    const s = D.SHAPES[(D.TYPES[t] || {}).icon];
+                    return !s || !s.fill;
+                });
+                for (let i = 0; i < 40; i++) {
+                    if (types.every(function (t) { return !!D.pinIcon(t); })) break;
+                    await new Promise(function (r) { setTimeout(r, 100); });
+                }
+                const missing = types.filter(function (t) { return !D.pinIcon(t); });
+                const deer = D.SHAPES.deer;
+                return { bad: bad, missing: missing,
+                         deerPaths: (deer.fill.match(/<path/g) || []).length,
+                         svg: D.shapeSvg('deer', { size: 40, halo: true }),
+                         dom: !!D.shapeFor('deer', 'wp-shape') };
+            }""")
+            check("every spot type has a silhouette", not shapes["bad"], shapes["bad"])
+            check("every silhouette rasterises for the map",
+                  not shapes["missing"], shapes["missing"])
+            check("the deer marker is a deer shape with a white halo",
+                  shapes["deerPaths"] >= 4 and 'stroke="#fff"' in shapes["svg"] and shapes["dom"],
+                  {"paths": shapes["deerPaths"], "dom": shapes["dom"]})
+            # ---------------- select several spots and delete them ----------------
+            page.evaluate("""async () => {
+                const D = window.Hunt.Data;
+                const extra = [['deer', 'Bulk one'], ['bear', 'Bulk two'], ['turkey', 'Bulk three']];
+                for (let i = 0; i < extra.length; i++) {
+                    await D.saveWaypoint(D.newWaypoint({
+                        type: extra[i][0], name: extra[i][1],
+                        lat: 44.19 + i * 0.002, lon: -71.40 + i * 0.002
+                    }));
+                }
+            }""")
             page.click("#btnWaypoints")
             page.wait_for_timeout(500)
+            before = page.evaluate("window.Hunt.Data.waypoints.length")
+            page.click("#btnWpSelect")
+            page.wait_for_timeout(400)
+            check("select mode shows the bulk bar", page.is_visible("#wpSelectBar"))
+            picked = page.evaluate("""() => {
+                const rows = [...document.querySelectorAll('#wpList .item')];
+                const pick = rows.filter(r => /Bulk /.test(r.textContent)).slice(0, 2);
+                pick.forEach(r => r.click());
+                return {
+                    clicked: pick.length,
+                    checked: document.querySelectorAll('#wpList .item-check:checked').length,
+                    label: document.getElementById('wpSelectCount').textContent,
+                    btn: document.getElementById('btnWpSelectDelete').textContent
+                };
+            }""")
+            check("ticking several spots updates the count and the button",
+                  picked["clicked"] == 2 and picked["checked"] == 2 and
+                  picked["label"].startswith("2 of ") and picked["btn"] == "Delete 2", picked)
+            page.click("#btnWpSelectDelete")
+            page.wait_for_timeout(500)
+            check("deleting several asks first", page.is_visible("#modalOk"))
+            page.click("#modalOk")
+            page.wait_for_timeout(900)
+            after = page.evaluate("""async () => {
+                const D = window.Hunt.Data;
+                const left = D.waypoints.filter(w => /Bulk /.test(w.name || '')).map(w => w.name);
+                const all = await window.Hunt.DB.getAll('waypoints').catch(() => []);
+                return { left: left, total: D.waypoints.length,
+                         stored: all.filter(w => /Bulk /.test(w.name || '')).map(w => w.name),
+                         bar: !document.getElementById('wpSelectBar').hidden };
+            }""")
+            check("two spots are deleted, the rest stay",
+                  after["left"] == ["Bulk three"] and after["total"] == before - 2, after)
+            check("bulk delete also clears them from storage",
+                  after["stored"] == ["Bulk three"], after["stored"])
+            check("select mode ends after deleting", after["bar"] is False, after["bar"])
+
+            # the sheet is still open here: screenshot the list, then close it
+            page.wait_for_timeout(400)
             page.screenshot(path=os.path.join(SHOTS, "10-spot-icons.png"))
             page.click("#sheetWaypoints [data-close]")
             page.wait_for_timeout(300)

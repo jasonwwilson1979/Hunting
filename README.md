@@ -17,8 +17,9 @@ devices:
   Referer, fetches OSM tiles one at a time, stops when the server says no and points you at
   USGS/Esri (which is why USGS Topo is the default in North America).*
 - **Spots** (treestand, blind, building/cabin, deer, bear, turkey, trail cam, water, food plot,
-  sign, kill site, camp, vehicle, hazard) with notes, bearings and distances — each with its own
-  icon on the map, in the list and on the type chips.
+  sign, kill site, camp, vehicle, hazard) with notes, bearings and distances — each one drawn as
+  **its own silhouette** (a deer with antlers, a bear, a fanned turkey, a stand with a ladder …)
+  on the map, in the list and on the spot sheet. Tick several in the list to delete them together.
 - **Track recording** with distance, time, elevation gain and GPX export.
 - **Sun & moon**: sunrise, sunset, civil twilight, legal-light window, moon phase, % lit.
 - **Compass**, **distance measuring**, **go to coordinates**, UTM / DMS / decimal formats.
@@ -30,11 +31,11 @@ Everything stays on the device unless you choose to use the server: the app has 
 uploads nothing on its own. With a server, your maps, spots and tracks go only to that server, under
 your own account.
 
-**Version.** The app shows `HuntMap v1.10.1 · 2026-11-27` in **Tools → About** (and the same number
+**Version.** The app shows `HuntMap v1.11.0 · 2026-11-27` in **Tools → About** (and the same number
 leads the diagnostics line); the server reports `server v4` in `/api/health/`, `/api/maps/` and
 `/api/diag/`. **Tools → Account → Check server** prints both side by side, so "which build am I
 talking to?" is never a guess. Every release is listed in [CHANGELOG.md](CHANGELOG.md) and tagged
-(`git tag v1.10.1`); to cut a new one, bump `js/version.js` (`app` **and** `shell`) — the shell name is
+(`git tag v1.11.0`); to cut a new one, bump `js/version.js` (`app` **and** `shell`) — the shell name is
 the service-worker cache, so bumping it is what makes phones replace their cached copy.
 
 ![HuntMap running on a phone with USGS topo, waypoint and GPS fix](tests/screenshots/01-map.png)
@@ -213,7 +214,7 @@ Accounts live in this server's database — no external service, no email confir
 | *Wrong user name or password* | Case-insensitive and whitespace-tolerant now; the admin password is `HUNTMAP_ADMIN_PASSWORD`. Change it with `docker exec -it huntmap python manage.py changepassword admin`. |
 | *The server replied with a web page instead of JSON* | Something in front (Cloudflare **Access**, an auth proxy, a captive portal) intercepted `/api/`. Sign in there first, or bypass `/api/*` for that app. |
 | *Could not reach the server* | Wrong host/port, or the container is down. Check `curl -sk https://<host>:8443/api/me/`. |
-| *I don't see a button the docs mention* (Sync spots, Edit on a map, state/county fields) | The phone is running a cached copy of the app. **Tools → About** shows `HuntMap v…` — compare it with `js/version.js`. Press **Tools → About → Update app** (clears the cache, unregisters the service worker, reloads); your data is kept. Then **Tools → Account → Check server**: `app v1.10.1 · server v4 …` proves both ends are current. |
+| *I don't see a button the docs mention* (Sync spots, Edit on a map, state/county fields) | The phone is running a cached copy of the app. **Tools → About** shows `HuntMap v…` — compare it with `js/version.js`. Press **Tools → About → Update app** (clears the cache, unregisters the service worker, reloads); your data is kept. Then **Tools → Account → Check server**: `app v1.11.0 · server v4 …` proves both ends are current. |
 | *Deleted spots come back after a sync* | Fixed in **v1.10.1**: the app sent a deletion without coordinates and the server skipped it. Redeploy the container **and** press **Tools → About → Update app** on the phone (both sides carry the fix). If the account sheet says *"N deletions not applied by the server — it is an older build"*, the container is still the old image. |
 | *Check server says `0 maps in the library`* | The library really is empty: it only holds maps you uploaded. Add a map on the phone with **Copy to my PC library** ticked (it is ticked by default when signed in), use **Maps → Your maps → Edit → Copy to my PC library** for a map already on the phone, or drop files in `/upload/`. |
 | **CSRF verification failed. Request aborted.** | TLS ended at a proxy/Cloudflare but Django thought it was http. Now handled automatically when the request comes from a local proxy (see below). If you front it with a proxy on *another* machine, set `HUNTMAP_PROXY_SSL=1`, `HUNTMAP_FORWARDED_HOST=1` and `HUNTMAP_ORIGINS=https://your.hostname`. |
@@ -558,16 +559,26 @@ Related log lines and what they mean:
 | **Tools** | Sun & moon, compass, tracks, go-to coordinates, GPS details, backup, settings. |
 | **Maps** | Base map choice, your PDF maps, offline tile download. |
 
-**Spot types and their icons.** Every type has its own line-art icon, drawn inside the map pin, on
-the type chips and in the spot list: **treestand**, **ground blind**, **building / cabin**,
-**deer**, **bear**, **turkey**, **trail camera**, **water**, **food plot**, **sign / scrape**,
-**track / rub**, **kill site**, **camp**, **vehicle**, **hazard**, **waypoint**. The icon is what
-you see at a glance on the map; the label is in the list and in the pin tooltip.
+**Spot types and their shapes.** Every type is drawn as its own **silhouette**, not a generic
+circle: **treestand** (ladder stand), **ground blind** (dome with a window), **building / cabin**,
+**deer** (antlers and all), **bear**, **turkey** (fanned tail), **trail camera**, **water** (drop),
+**food plot** (sprout), **sign / scrape** (hoof prints), **track / rub** (rubbed trunk), **kill site**
+(impact star), **camp** (tent), **vehicle** (pickup), **hazard** (warning triangle) and **waypoint**
+(classic pin). Each is in its type colour with a white halo so it reads over dark forest and shadow,
+stands on a short stem, and the small dot at the bottom is the exact coordinate. The same shapes are
+used in the spot list and on the spot sheet; the little type chips keep thin line icons, which stay
+clear at 15 px.
 
 **Going to a spot.** Open **Spots** and tap a row: the map jumps to that spot (zooming in if you
 were far out), the pin is highlighted and the list closes — the toast tells you how far it is and
 that the pin opens the editor. The **Edit** button at the end of each row opens the full sheet
 (type, notes, go-to, share, delete) instead of moving the map.
+
+**Deleting several spots.** Press the **select** button (check-in-a-square, top left of the Spots
+header): every row gets a tick box and a bar appears — `2 of 6 selected · All · None · Delete 2`.
+Tap rows to tick them (*All* takes everything the current search shows), then **Delete N** and
+confirm once. Bulk deletes are queued for the server together, so they stay deleted on your other
+devices too.
 
 Other gestures:
 
@@ -585,7 +596,11 @@ Other gestures:
 
 ![Crosshair placement mode: coordinates, distance from you, and a Drop button](tests/screenshots/09-crosshair.png)
 
-![Spot list and map pins carrying their type icons](tests/screenshots/10-spot-icons.png)
+![Spot list and map pins drawn as their own silhouettes](tests/screenshots/10-spot-icons.png)
+
+![Deer, bear, turkey, stand, blind, cabin, camp, water, hazard and kill site as shaped markers](tests/screenshots/11-shaped-pins.png)
+
+![Tick several spots in the list and delete them together](tests/screenshots/12-select-spots.png)
 
 ---
 
@@ -837,8 +852,10 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (86 checks): load without errors, the version in *Tools → About* matching
-`js/version.js` with the service-worker cache named after it, GPS fix (two-phase: a quick network/Wi-Fi request
+`tests/e2e.py` (95 checks): load without errors, the version in *Tools → About* matching
+`js/version.js` with the service-worker cache named after it, **every spot type having a silhouette
+that rasterises for the canvas** (the deer marker carrying its white halo), **select-mode bulk delete**
+(tick two of three, confirm, both gone from memory and IndexedDB, mode ends), GPS fix (two-phase: a quick network/Wi-Fi request
 then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button
 switching the watch to network mode), HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"

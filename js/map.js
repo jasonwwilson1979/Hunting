@@ -429,42 +429,56 @@
 
   P.setWaypoints = function (list) { this.waypoints = list || []; this.invalidate(); };
 
+  /**
+   * A shaped marker: the type's silhouette standing on a short stem, with the
+   * exact spot marked by a small dot. No circle - the shape *is* the pin.
+   */
   P.drawPin = function (x, y, color, code, selected, type) {
     const ctx = this.ctx;
-    const r = selected ? 12 : 10;
-    const cy = y - r * 1.9;
+    const size = selected ? 40 : 33;
+    const stem = selected ? 9 : 8;
+    const bottom = y - stem;          // silhouette sits on the stem
     ctx.save();
-    // tail
+
+    // stem: white under-stroke first so it survives dark map areas
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+    ctx.lineWidth = 4.4;
+    ctx.beginPath(); ctx.moveTo(x, bottom); ctx.lineTo(x, y); ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.9;
+    ctx.beginPath(); ctx.moveTo(x, bottom); ctx.lineTo(x, y); ctx.stroke();
+
+    // the exact coordinate
     ctx.beginPath();
-    ctx.moveTo(x - r * 0.52, cy + r * 0.62);
-    ctx.lineTo(x + r * 0.52, cy + r * 0.62);
-    ctx.lineTo(x, y);
-    ctx.closePath();
+    ctx.arc(x, y, 3.4, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.lineWidth = selected ? 2.5 : 1.4;
-    ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,.55)';
+    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+    ctx.lineWidth = 1.7;
     ctx.stroke();
-    // head
-    ctx.beginPath();
-    ctx.arc(x, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,.55)';
-    ctx.lineWidth = selected ? 2.5 : 1.4;
-    ctx.stroke();
+
+    if (selected) {
+      // soft halo behind the shape for the active spot
+      ctx.beginPath();
+      ctx.arc(x, bottom - size / 2, size * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.fill();
+    }
 
     const icon = (type && H.Data && H.Data.pinIcon) ? H.Data.pinIcon(type) : null;
     if (icon) {
-      const size = r * 1.62;
-      ctx.drawImage(icon, x - size / 2, cy - size / 2, size, size);
+      ctx.drawImage(icon, x - size / 2, bottom - size, size, size);
     } else {
-      // code, shown until the icon bitmap is ready (or if it cannot load)
-      ctx.fillStyle = '#10140c';
-      ctx.font = '800 ' + (r > 11 ? 10 : 9) + 'px -apple-system, system-ui, sans-serif';
+      // code, shown until the silhouette bitmap is ready (or if it cannot load)
+      ctx.font = '800 ' + (selected ? 11 : 10) + 'px -apple-system, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(code, x, cy + 0.5);
+      ctx.lineWidth = 3.4;
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.strokeText(code, x, bottom - size / 2);
+      ctx.fillStyle = color;
+      ctx.fillText(code, x, bottom - size / 2);
     }
     ctx.restore();
   };
@@ -474,7 +488,7 @@
     const self = this;
     this.waypoints.forEach(function (w) {
       const p = self.latLonToScreen(w.lat, w.lon);
-      if (p.x < -70 || p.x > self.width + 70 || p.y < -70 || p.y > self.height + 70) return;
+      if (p.x < -70 || p.x > self.width + 70 || p.y < -90 || p.y > self.height + 70) return;
       const info = typeInfo(w);
       self.drawPin(p.x, p.y, info.color, info.code, self.selectedId === w.id, w.type);
       if (self.showLabels && w.name) {
@@ -493,11 +507,11 @@
   };
 
   P.hitTest = function (sx, sy) {
-    let best = null, bestD = 26;
+    let best = null, bestD = 30;
     for (let i = 0; i < this.waypoints.length; i++) {
       const w = this.waypoints[i];
       const p = this.latLonToScreen(w.lat, w.lon);
-      const cy = p.y - 19;
+      const cy = p.y - 22;          // centre of the silhouette above the anchor
       const d = Math.hypot(p.x - sx, cy - sy);
       if (d < bestD) { bestD = d; best = w; }
     }

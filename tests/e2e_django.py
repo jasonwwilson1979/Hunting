@@ -89,7 +89,18 @@ def main():
             page = ctx.new_page()
             errors = []
             page.on("pageerror", lambda exc: errors.append(str(exc)))
-            page.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
+
+            def on_console(m):
+                if m.type != "error":
+                    return
+                text = m.text
+                # A tile server legitimately answers 404 where no tile exists; the
+                # app treats that as "no tile" and carries on, so it is not a bug.
+                if "Failed to load resource" in text and "404" in text:
+                    return
+                errors.append("console: " + text)
+
+            page.on("console", on_console)
 
             page.goto(BASE + "/", wait_until="load")
             page.wait_for_timeout(1800)

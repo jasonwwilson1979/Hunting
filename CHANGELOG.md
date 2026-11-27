@@ -10,6 +10,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.11.0] — 2026-11-27
+
+### Added
+- **Shaped map markers.** The pin is now the *thing* — a deer silhouette with
+  antlers, a bear, a fanned turkey, a treestand with a ladder, a dome blind, a cabin,
+  a trail camera, a water droplet, a food-plot sprout, hoof prints, a rub trunk, an
+  impact star, a tent, a pickup, a hazard triangle and the classic pin for a plain
+  waypoint — each in its type colour with a white halo so it reads over dark forest,
+  standing on a short stem with a dot at the exact coordinate. No more circle badge.
+- **Delete several spots at once.** In *Spots*, the new **select** button (top left
+  of the sheet, check-in-a-square) turns the list into tick boxes with a bar:
+  `2 of 6 selected · All · None · Delete 2`. Rows highlight, *All* takes everything
+  that passes the current search, and the delete asks once before removing them.
+  Bulk deletes queue their tombstones together, so they stay deleted after a sync.
+
+### Changed
+- Spot rows and the spot sheet's title use the same silhouettes (the small type
+  chips keep the thin line icons, which stay legible at 15 px).
+- Ticking a row updates it in place instead of re-rendering the list, so a quick
+  second tap is never lost.
+
+### Tests
+- `tests/e2e.py` now checks every type has a silhouette, that all of them rasterise
+  for the canvas, that the deer marker carries a halo, and the whole select-then-
+  delete flow (two of three deleted, gone from IndexedDB, select mode ends).
+
 ## [1.10.1] — 2026-11-27
 
 ### Fixed

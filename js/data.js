@@ -60,18 +60,142 @@
     return svg;
   };
 
-  /* Map pins need pixels, not DOM nodes: rasterise each icon once from an SVG
-     data URL and cache it. Until it is ready the pin shows its letter code. */
+  /* Silhouette markers: the pin is the animal/tool itself, not a circle around a
+     line icon. `fill` is solid mass, `line` is the thin bits (legs, antlers,
+     ladder rungs). Both sit on a 24x24 grid and are drawn with a white halo so
+     they survive dark forest on the map. */
+  D.SHAPES = {
+    stand: {
+      fill: '<path fill-rule="evenodd" d="M5.6 5.2h7.2v2.1H5.6zM5.6 8.9h12.8v1.9H5.6zM15.2 5.2h3.2v2.1h-3.2z"/>',
+      line: '<path d="M6.6 8.9V5.2M18.4 8.9V5.2M8.4 10.8v9.6M15.6 10.8v9.6M8.4 13.6h7.2M8.4 16.6h7.2M8.4 19.4h7.2"/>'
+    },
+    blind: {
+      fill: '<path fill-rule="evenodd" d="M3.4 19.6a8.6 8.6 0 0 1 17.2 0zM8.6 14.4h6.8v2.6H8.6z"/>',
+      line: ''
+    },
+    building: {
+      fill: '<path fill-rule="evenodd" d="M2.8 20.4V10.2L12 3.4l9.2 6.8v10.2zM9.6 20.4v-5.8h4.8v5.8zM15.8 6.2h2.2v3.6h-2.2z"/>',
+      line: ''
+    },
+    deer: {
+      fill: '<path d="M8.8 11.4h5.6c2.3 0 4 1.5 4.2 3.6l.2 2.2H8.2l-.2-2.2c-.1-2 .8-3.6.8-3.6z"/>' +
+        '<path d="M9.6 12.6 8.2 8.6l1.7-.9 1.7 4.6z"/>' +
+        '<path d="M7.2 8.9c-.5-1-.2-2.1.7-2.4l2.3-.6.6 2.7-2.2 1z"/>' +
+        '<path d="M7.6 7.4 5.4 8.3l2.1.8z"/>' +
+        '<path d="M8.7 6.3 6.9 4.6l.4 2.5z"/>' +
+        '<path d="M18.6 12.6l1.4 1.5-1.9.7z"/>',
+      line: '<path d="M7.9 6.4 6.4 3.5M7.4 5.4 4.9 4.8M6.8 4.5 6 2.7M8 6.4 9.6 4.2M9 4.7l1.7-1.3"/>' +
+        '<path d="M9.8 17.2v3.9M11.6 17.2v3.9M15.8 17.2v3.9M18 17.2v3.9"/>'
+    },
+    bear: {
+      fill: '<path d="M8.8 12.4c.2-2.7 2.4-4.3 5.2-4.3l1.6.1c2.4.2 4 1.9 4.2 4.2l.2 1.9H8.2z"/>' +
+        '<path d="M7.5 12.1a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4z"/>' +
+        '<path d="M5.4 12.9 3.4 13.6l1.9 1.2z"/>' +
+        '<path d="M6.2 9.8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"/>' +
+        '<path d="M9.7 9.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>' +
+        '<path d="M19.8 13.2l1.6 1.2-1.8.9z"/>',
+      line: '<path d="M9.2 18.7v2.6M11.6 18.7v2.6M15.4 18.7v2.6M17.8 18.7v2.6"/>'
+    },
+    turkey: {
+      fill: '<path d="M6.6 14.2a4.7 3.6 0 1 1 9.4 0 4.7 3.6 0 0 1-9.4 0z"/>' +
+        '<path d="M14.6 12.6 21.6 5.2l.9 3.5z"/>' +
+        '<path d="M15.2 13.6 22.9 9.3l.2 3.5z"/>' +
+        '<path d="M15.3 14.6 22.6 13.5l-.9 3.4z"/>' +
+        '<path d="M8.1 10.6a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8z"/>' +
+        '<path d="M9.2 11.4 7.9 9.2l2.1.5z"/>' +
+        '<path d="M7.4 10.2 5.7 10.6l1.5 1z"/>',
+      line: '<path d="M9.8 17.6v3.1M12.6 17.6v3.1M9.1 20.8h1.4M11.9 20.8h1.4"/>'
+    },
+    cam: {
+      fill: '<path fill-rule="evenodd" d="M4 8.6h12.6a2.2 2.2 0 0 1 2.2 2.2v6a2.2 2.2 0 0 1-2.2 2.2H4zM12.2 11.4a2.9 2.9 0 1 0 0 5.8 2.9 2.9 0 0 0 0-5.8zM5.9 10.8h1.7v1.7H5.9z"/>',
+      line: '<path d="M19.4 10.4h2.2v6.4h-2.2M15.8 8.6V6.2M6 19v1.6M15 19v1.6"/>'
+    },
+    water: {
+      fill: '<path d="M12 3.1c3.7 4.4 6.1 7.4 6.1 10.1a6.1 6.1 0 0 1-12.2 0c0-2.7 2.4-5.7 6.1-10.1z"/>',
+      line: ''
+    },
+    food: {
+      fill: '<path d="M12 12.4C8.3 12.4 5.8 10.1 5.8 6.5c3.8 0 6.2 2.4 6.2 5.9z"/>' +
+        '<path d="M12 12.4c3.7 0 6.2-2.3 6.2-5.9-3.8 0-6.2 2.4-6.2 5.9z"/>',
+      line: '<path d="M12 12.4v8.2"/>'
+    },
+    sign: {
+      fill: '<path d="M8.4 4.2c1.6 0 2.5 1.5 2.5 3.1 0 2-1.2 3.4-2.5 5.5-1.3-2.1-2.5-3.5-2.5-5.5 0-1.6.9-3.1 2.5-3.1z"/>' +
+        '<path d="M15.6 9.4c1.6 0 2.5 1.5 2.5 3.1 0 2-1.2 3.4-2.5 5.5-1.3-2.1-2.5-3.5-2.5-5.5 0-1.6.9-3.1 2.5-3.1z"/>',
+      line: '<path d="M7.2 16.4v1.9M9.6 16.4v1.9M14.4 20.2v-1.9M16.8 20.2v-1.9"/>'
+    },
+    track: {
+      fill: '<path fill-rule="evenodd" d="M9.6 3.4h4.8l-.4 17.2H10zM9.2 9.2h5.6v1.5H9.2zM9.1 13.4h5.8v1.5H9.1z"/>',
+      line: '<path d="M12 3.4v17.2"/>'
+    },
+    kill: {
+      fill: '<path d="M12 2.4l1.9 4.8 4.6-2.3-2.3 4.6 4.8 1.9-4.8 1.9 2.3 4.6-4.6-2.3L12 21.6l-1.9-4.8-4.6 2.3 2.3-4.6L3 12.6l4.8-1.9-2.3-4.6 4.6 2.3z"/>',
+      line: ''
+    },
+    camp: {
+      fill: '<path fill-rule="evenodd" d="M2.4 19.8 12 3.6l9.6 16.2zM12 19.8l-2.9-5.2h5.8z"/>',
+      line: '<path d="M3.4 21.2h17.2"/>'
+    },
+    park: {
+      fill: '<path d="M2.8 15.6v-3.8h6.4l2.4 2.6h9.6v5.1h-1.6a2.5 2.5 0 0 0-5 0h-5.6a2.5 2.5 0 0 0-5 0H2.8z"/>' +
+        '<path d="M7.2 18.9a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8z"/>' +
+        '<path d="M17.4 18.9a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8z"/>',
+      line: '<path d="M9.2 11.8v3.8M13.2 14.4h5.2"/>'
+    },
+    hazard: {
+      fill: '<path fill-rule="evenodd" d="M12 2.6 22.6 21.4H1.4zM10.9 8.9h2.2v5.9h-2.2zM10.9 16.2h2.2v2.2h-2.2z"/>',
+      line: ''
+    },
+    pin: {
+      fill: '<path fill-rule="evenodd" d="M12 21.6S5.2 14.9 5.2 10.1a6.8 6.8 0 1 1 13.6 0C18.8 14.9 12 21.6 12 21.6zM12 12.6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>',
+      line: ''
+    }
+  };
+
+  /**
+   * Silhouette as SVG markup.
+   * opts: {color, size, halo (0/1), cls}. `currentColor` makes it follow CSS.
+   */
+  D.shapeSvg = function (type, opts) {
+    opts = opts || {};
+    const info = D.TYPES[type] || D.TYPES.wp;
+    const shape = D.SHAPES[info.icon] || D.SHAPES.pin;
+    const color = opts.color || info.color || '#e2801f';
+    const size = opts.size || 24;
+    const cls = opts.cls || 'wp-shape';
+    const fill = shape.fill || '';
+    const line = shape.line || '';
+    let out = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="' + size +
+      '" height="' + size + '" class="' + cls + '" aria-hidden="true">';
+    if (opts.halo) {
+      // white outline under everything, so the silhouette reads on dark forest
+      out += '<g fill="#fff" stroke="#fff" stroke-width="3.4" stroke-linecap="round" ' +
+        'stroke-linejoin="round">' + fill + '</g>' +
+        '<g fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" ' +
+        'stroke-linejoin="round">' + line + '</g>';
+    }
+    out += '<g fill="' + color + '" fill-rule="evenodd">' + fill + '</g>' +
+      '<g fill="none" stroke="' + color + '" stroke-width="1.9" stroke-linecap="round" ' +
+      'stroke-linejoin="round">' + line + '</g></svg>';
+    return out;
+  };
+
+  /** Silhouette as a DOM node, coloured by CSS (`color`) - used in spot rows. */
+  D.shapeFor = function (type, cls) {
+    const box = document.createElement('div');
+    box.innerHTML = D.shapeSvg(type, { cls: cls || 'wp-shape', color: 'currentColor' });
+    return box.firstChild;
+  };
+
+  /* Map pins need pixels, not DOM nodes: rasterise each silhouette once from an
+     SVG data URL and cache it. Until it is ready the pin shows its letter code. */
   const pinIcons = {};
   D.pinIcon = function (type) {
     const info = D.TYPES[type] || D.TYPES.wp;
     const key = info.icon;
     if (Object.prototype.hasOwnProperty.call(pinIcons, key)) return pinIcons[key] || null;
     pinIcons[key] = null;
-    const path = D.ICON_PATHS[key] || D.ICON_PATHS.pin;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="60" height="60">' +
-      '<g fill="none" stroke="#0d1108" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
-      path + '</g></svg>';
+    const svg = D.shapeSvg(type, { size: 96, halo: true });
     const img = new Image();
     img.onload = function () {
       pinIcons[key] = img;
@@ -155,6 +279,22 @@
     if (D.settings.targetId === id) { D.settings.targetId = null; D.saveSettings(); }
     if (H.Sync) { H.Sync.markDeleted('spots', id); H.Sync.queueSync(); }
     return DB.del('waypoints', id);
+  };
+
+  /** Delete several spots at once (used by the Spots panel's select mode). */
+  D.deleteWaypoints = function (ids) {
+    ids = (ids || []).slice();
+    if (!ids.length) return Promise.resolve(0);
+    const gone = {};
+    ids.forEach(function (id) { gone[id] = true; });
+    D.waypoints = D.waypoints.filter(function (w) { return !gone[w.id]; });
+    if (gone[D.settings.targetId]) { D.settings.targetId = null; D.saveSettings(); }
+    if (H.Sync) {
+      ids.forEach(function (id) { H.Sync.markDeleted('spots', id); });
+      H.Sync.queueSync();
+    }
+    return Promise.all(ids.map(function (id) { return DB.del('waypoints', id); }))
+      .then(function () { return ids.length; });
   };
 
   D.getWaypoint = function (id) { return D.waypoints.find(function (w) { return w.id === id; }) || null; };

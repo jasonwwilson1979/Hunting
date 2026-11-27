@@ -35,6 +35,7 @@
   <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M8 6.5 12 3l4 3.5"/><path d="M5 13v6.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V13"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4h5v2.5M6.5 6.5 7.5 21h9l1-14.5"/><path d="M10.5 10v7M13.5 10v7"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+<symbol id="i-select" viewBox="0 0 24 24"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="3.2"/><path d="m8 12.3 2.9 2.9 5.4-6.2"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M4 4l16 16"/><path d="M9.9 5.9A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.2 8.1A17.6 17.6 0 0 0 2.5 12S6 18.5 12 18.5a9.7 9.7 0 0 0 4-.9"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/></symbol>
@@ -224,6 +225,7 @@
   <header class="sheet-head">
     <h2>Spots <span class="count" id="wpCount"></span></h2>
     <div class="head-actions">
+      <button class="icon-btn" id="btnWpSelect" type="button" title="Select spots to delete"><svg class="i"><use href="#i-select"/></svg></button>
       <button class="icon-btn" id="btnWpExport" type="button" title="Export GPX"><svg class="i"><use href="#i-download"/></svg></button>
       <button class="icon-btn" id="btnWpImport" type="button" title="Import GPX"><svg class="i"><use href="#i-upload"/></svg></button>
       <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
@@ -231,6 +233,12 @@
   </header>
   <div class="sheet-body">
     <input type="search" id="wpSearch" class="search" placeholder="Search spots&hellip;">
+    <div class="select-bar" id="wpSelectBar" hidden>
+      <span class="muted small" id="wpSelectCount">0 selected</span>
+      <button class="mini-btn" id="btnWpSelectAll" type="button">All</button>
+      <button class="mini-btn" id="btnWpSelectNone" type="button">None</button>
+      <button class="btn danger" id="btnWpSelectDelete" type="button" disabled>Delete</button>
+    </div>
     <div class="list" id="wpList"></div>
   </div>
 </section>

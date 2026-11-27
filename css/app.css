@@ -424,10 +424,26 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
 .item-right { font-size: 11.5px; color: var(--dim); text-align: right; flex: 0 0 auto; white-space: pre-line; }
 .empty { padding: 18px 4px; color: var(--dim); font-size: 13px; text-align: center; }
 .pin-mini {
-  width: 32px; height: 32px; flex: 0 0 auto; border-radius: 9px;
-  display: grid; place-items: center; font-size: 10px; font-weight: 800;
-  color: #10140c; letter-spacing: -.02em;
+  width: 34px; height: 34px; flex: 0 0 auto; border-radius: 0;
+  display: grid; place-items: center;
+  filter: drop-shadow(0 1px 1.4px rgba(0, 0, 0, .42));
 }
+.pin-mini .wp-shape { width: 30px; height: 30px; }
+.wp-shape { width: 20px; height: 20px; display: block; }
+
+/* Spots panel: select several spots and delete them together */
+.select-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 0 2px;
+}
+.select-bar .btn { padding: 6px 14px; font-size: 13px; }
+.select-bar .muted { flex: 1 1 auto; min-width: 90px; }
+.item-check {
+  width: 22px; height: 22px; flex: 0 0 auto; margin: 0;
+  accent-color: var(--accent);
+}
+.item.sel { background: rgba(226, 128, 31, .13); border-radius: 8px; }
+.icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(226,128,31,.16); }
 /* library filters (From your PC) */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; }
 .filters input, .filters select {
@@ -459,6 +475,8 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
   display: inline-grid; place-items: center; vertical-align: middle; margin-right: 8px;
 }
 .title-ic .wp-ic { width: 18px; height: 18px; }
+.title-ic.shape-ic { background: none; }
+.title-ic.shape-ic .wp-shape { width: 26px; height: 26px; }
 .provider-list { display: flex; flex-direction: column; }
 .prov {
   display: flex; align-items: center; gap: 10px; padding: 9px 2px;
