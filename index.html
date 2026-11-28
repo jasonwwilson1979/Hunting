@@ -90,6 +90,16 @@
   <button class="ctrl" id="btnPin" type="button" title="Place a waypoint at the crosshair"><svg class="i"><use href="#i-crosshair"/></svg></button>
 </div>
 
+<div class="mini-compass" id="miniCompass" role="button" tabindex="0"
+     title="Compass — tap to switch the sensor on">
+  <div class="mc-ring">
+    <span class="mc-card mc-n">N</span><span class="mc-card mc-e">E</span>
+    <span class="mc-card mc-s">S</span><span class="mc-card mc-w">W</span>
+    <div class="mc-needle" id="mcNeedle"></div>
+    <span class="mc-hub"></span>
+  </div>
+</div>
+
 <div class="map-foot">
   <div class="scale" id="scaleBar"><div class="scale-line" id="scaleLine"></div><span class="scale-text mono" id="scaleText"></span></div>
   <div class="attribution" id="attribution"></div>
@@ -403,6 +413,8 @@
     <label class="switch-row"><span>Keep screen awake</span><input type="checkbox" id="setAwake" checked></label>
     <label class="switch-row"><span>High-accuracy GPS <em class="muted small">(off = fast Wi-Fi fix)</em></span><input type="checkbox" id="setHighAcc" checked></label>
     <label class="switch-row"><span>Waypoint labels</span><input type="checkbox" id="setLabels" checked></label>
+    <label class="switch-row"><span>Modern map pins</span><input type="checkbox" id="setModernPins" checked></label>
+    <label class="switch-row"><span>Compass rose on the map</span><input type="checkbox" id="setCompassRose" checked></label>
     <label class="switch-row"><span>Lat/lon grid</span><input type="checkbox" id="setGrid"></label>
     <label class="switch-row"><span>Show tracks on map</span><input type="checkbox" id="setTrail" checked></label>
 

@@ -437,11 +437,65 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
   filter: drop-shadow(0 1px 1.4px rgba(0, 0, 0, .42));
 }
 .pin-mini .wp-shape { width: 36px; height: 36px; }
+.pin-mini .wp-badge { width: 36px; height: 36px; display: block; }
+.pin-mini.pin-modern { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+.legend-item .wp-badge { width: 30px; height: 30px; }
 .wp-shape { width: 20px; height: 20px; display: block; }
 .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 4px 0 10px; }
 .legend-item { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .legend-item .wp-shape { width: 30px; height: 30px; flex: 0 0 auto; }
 .legend-item span { font-size: 13px; line-height: 1.15; }
+/* --------------------------- mini compass rose --------------------------- */
+.mini-compass {
+  position: fixed;
+  z-index: 18;
+  right: calc(10px + var(--safe-r));
+  top: calc(66px + var(--safe-t));
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: rgba(14, 19, 11, .56);
+  border: 1px solid rgba(233, 240, 220, .18);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  display: grid; place-items: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mini-compass[hidden] { display: none; }
+.mc-ring {
+  position: relative; width: 46px; height: 46px; border-radius: 50%;
+  border: 1px solid rgba(233, 240, 220, .22);
+}
+.mc-card {
+  position: absolute; font-size: 8px; font-weight: 700; letter-spacing: .04em;
+  color: var(--dim, #a3ab96); line-height: 1;
+}
+.mc-n { top: 2px; left: 50%; transform: translateX(-50%); color: #e2513f; }
+.mc-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.mc-e { right: 3px; top: 50%; transform: translateY(-50%); }
+.mc-w { left: 3px; top: 50%; transform: translateY(-50%); }
+.mc-needle {
+  position: absolute; left: 50%; top: 50%;
+  width: 3px; height: 32px; margin: -16px 0 0 -1.5px;
+  transform-origin: 50% 50%;
+  transition: transform .18s linear;
+  background: linear-gradient(to bottom, #e2513f 0 50%, rgba(233, 240, 220, .55) 50% 100%);
+  border-radius: 2px;
+  clip-path: polygon(50% 0, 100% 22%, 100% 100%, 0 100%, 0 22%);
+}
+.mc-hub {
+  position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
+  margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: #ece7d8; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .45);
+}
+.mini-compass.mc-off .mc-needle { opacity: .35; }
+.mini-compass.mc-off .mc-ring::after {
+  content: '?'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  font-size: 11px; color: #e9e4d4; background: rgba(14,19,11,.8); border-radius: 50%;
+  width: 16px; height: 16px; display: grid; place-items: center;
+}
+
 .fence-mini {
   width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
   border: 2.5px dashed currentColor; opacity: .95;

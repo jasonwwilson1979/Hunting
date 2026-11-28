@@ -64,7 +64,8 @@
     'dlStatus', 'btnDlStats', 'btnDlClear', 'dlStats', 'sheetTools', 'btnOpenSun',
     'btnOpenCompass', 'btnOpenTracks', 'btnOpenGoTo', 'btnOpenGps', 'btnOpenBackup',
     'btnOpenHelp', 'btnOpenInstall', 'setUnits', 'setCoordFormat', 'setNight', 'setAwake',
-    'setHighAcc', 'setLabels', 'setGrid', 'setTrail', 'diagInfo', 'btnSelfTest',
+    'setHighAcc', 'setLabels', 'setGrid', 'setModernPins', 'setCompassRose',
+    'miniCompass', 'mcNeedle', 'setTrail', 'diagInfo', 'btnSelfTest',
     'btnClearAll', 'testOut', 'sheetSun', 'sunBody', 'sheetCompass', 'compassCanvas',
     'compassRead', 'compassMsg', 'btnCompassEnable', 'sheetHelp', 'sheetAddMap', 'btnPickMap',
     'fileMap', 'mapFileName', 'mapPageRow', 'mapPage', 'mapPageCount', 'mapQuality',
@@ -123,6 +124,7 @@
       var target = D.settings.targetId ? D.getWaypoint(D.settings.targetId) : null;
       if (target) setTarget(target);
       updateGpsHud(GPS.state);
+      renderCompassRose();
       if (H.Sync) {
         H.Sync.onChange = onSyncChange;
         H.Sync.onMerged = onSpotsMerged;
@@ -813,6 +815,7 @@
     if (!S.defaultView) saveViewSoon();
     updateCoordHud();
     updateTargetBar();
+    renderCompassRose();
     if (S.pinMode) updatePinHud();
   }
   const saveViewSoon = U.debounce(function () {
@@ -822,6 +825,44 @@
   }, 1200);
   /* -------------------------------- GPS -------------------------------- */
   let gpsSeen = false;
+
+  /* --------------------------- heading / compass rose --------------------------- */
+  const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+    'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+  /** 0-360 -> "NNE 24°" (the way a compass reads). */
+  function headingText(deg) {
+    if (deg == null || !isFinite(deg)) return '';
+    const d = ((deg % 360) + 360) % 360;
+    return CARDINALS[Math.round(d / 22.5) % 16] + ' ' + Math.round(d) + '°';
+  }
+
+  /** The little compass: needle = where the phone is pointing. */
+  function renderCompassRose() {
+    if (!el.miniCompass) return;
+    el.miniCompass.hidden = D.settings.compassRose === false;
+    if (el.miniCompass.hidden) return;
+    const head = GPS.displayHeading();
+    el.miniCompass.classList.toggle('mc-off', head == null);
+    if (el.mcNeedle) {
+      el.mcNeedle.style.transform = 'rotate(' + (head == null ? 0 : head) + 'deg)';
+    }
+    el.miniCompass.title = head == null
+      ? 'No compass heading yet — tap to switch the sensor on'
+      : 'Pointing ' + headingText(head) + ' — tap for the compass panel';
+  }
+
+  function enableHeading() {
+    return GPS.enableCompass().then(function (ok) {
+      renderCompassRose();
+      if (!ok) {
+        U.toast('This device did not give a compass heading (permission or sensor)', 'err', 4200);
+      } else {
+        U.toast('Compass on — the cone follows your phone', 'ok', 2600);
+      }
+      return ok;
+    });
+  }
 
   function handleGps(st) {
     updateGpsHud(st);
@@ -860,6 +901,7 @@
     }
     updateCoordHud();
     updateTargetBar();
+    renderCompassRose();
   }
 
   function updateGpsHud(st, ticking) {
@@ -892,6 +934,8 @@
     } else if (st.status === 'error') {
       cls = 'err'; label = 'GPS error';
     }
+    const head = GPS.displayHeading();
+    if (head != null && st.status === 'ok') label += ' \u00b7 ' + headingText(head);
     if (dot.className !== 'gps-dot ' + cls) dot.className = 'gps-dot ' + cls;
     if (txt.textContent !== label) txt.textContent = label;
     el.btnLocate.classList.toggle('on', !!S.follow);
@@ -1408,8 +1452,9 @@
     D.TYPE_ORDER.forEach(function (type) {
       const info = D.TYPES[type];
       const item = U.el('div', { class: 'legend-item', 'data-type': type });
-      const icon = U.el('span', { style: 'color:' + info.color });
-      icon.appendChild(D.shapeFor(type, 'wp-shape'));
+      const modernPins = D.settings.pinStyle !== 'classic';
+      const icon = U.el('span', { style: modernPins ? '' : 'color:' + info.color });
+      icon.appendChild(modernPins ? D.badgeFor(type, 'wp-badge') : D.shapeFor(type, 'wp-shape'));
       item.appendChild(icon);
       item.appendChild(U.el('span', { text: info.label }));
       el.legendGrid.appendChild(item);
@@ -1499,8 +1544,11 @@
     }
     list.forEach(function (w) {
       const info = D.TYPES[w.type] || D.TYPES.wp;
-      const pin = U.el('span', { class: 'pin-mini', style: 'color:' + info.color, title: info.label });
-      pin.appendChild(D.shapeFor(w.type, 'wp-shape'));
+      const modernPins = D.settings.pinStyle !== 'classic';
+      const pin = U.el('span', {
+        class: 'pin-mini' + (modernPins ? ' pin-modern' : ''),
+        style: modernPins ? '' : 'color:' + info.color, title: info.label });
+      pin.appendChild(modernPins ? D.badgeFor(w.type, 'wp-badge') : D.shapeFor(w.type, 'wp-shape'));
       const main = U.el('div', { class: 'item-main' });
       main.appendChild(U.el('div', { class: 'item-title', text: w.name || 'Spot' }));
       const bits = [info.label, G.formatCoord(w.lat, w.lon, D.settings.coordFormat)];
@@ -2572,6 +2620,9 @@
       ['Source', st.lat == null ? '--' :
         (st.source === 'network' ? 'Network / Wi-Fi (coarse)' : 'Satellite GPS')],
       ['Mode', st.highAccuracy ? 'High accuracy' : 'Fast / network'],
+      ['Heading', GPS.displayHeading() == null ? '--' :
+        headingText(GPS.displayHeading()) +
+        (GPS.compass.enabled && GPS.compass.heading != null ? ' (compass)' : ' (course)')],
       ['Accuracy', st.accuracy != null ? '\u00b1' + st.accuracy.toFixed(1) + ' m (' + U.fmtDist(st.accuracy) + ')' : '--'],
       ['Searching', (st.status === 'waiting' && st.startedAt)
         ? Math.round((Date.now() - st.startedAt) / 1000) + ' s' : '--'],
@@ -2926,6 +2977,27 @@
       openSheet('sheetZones');
     });
     U.on(el.btnZoneAdd, 'click', addZone);
+    U.on(el.setModernPins, 'change', function () {
+      D.settings.pinStyle = el.setModernPins.checked ? 'modern' : 'classic';
+      D.saveSettings();
+      if (map) { map.setWaypoints(D.waypoints); map.invalidate(); }
+      renderWaypoints();
+      U.toast(D.settings.pinStyle === 'modern' ? 'Modern map pins' : 'Silhouette pins', 'ok', 1800);
+    });
+    U.on(el.setCompassRose, 'change', function () {
+      D.settings.compassRose = el.setCompassRose.checked;
+      D.saveSettings();
+      renderCompassRose();
+    });
+    if (el.miniCompass) {
+      U.on(el.miniCompass, 'click', function () {
+        if (GPS.compass.enabled && GPS.compass.heading != null) {
+          openSheet('sheetCompass');
+          return;
+        }
+        enableHeading();
+      });
+    }
     U.on(el.setZoneSound, 'change', function () {
       D.settings.zoneSound = el.setZoneSound.checked; D.saveSettings();
     });

@@ -20,6 +20,9 @@ devices:
   sign, kill site, camp, vehicle, hazard) with notes, bearings and distances — each one drawn as
   **its own silhouette** (a deer with antlers, a bear, a fanned turkey, a stand with a ladder …)
   on the map, in the list and on the spot sheet. Tick several in the list to delete them together.
+- **Modern map pins**, a blue **field-of-view wedge** showing which way you are pointing, and a
+  toggleable **compass rose** in the corner (Settings → *Modern map pins* / *Compass rose on
+  the map*; tap the rose to switch the compass sensor on).
 - **Fences (geofences)**: draw a circle on the ground and get told — banner, tones, vibration,
   notification — when you walk into it or out of it. Radius from 15 m to 5 km, per-fence
   enter/exit switches, and they travel in your backup.
@@ -743,6 +746,8 @@ Other gestures:
 
 ![The legend in the Spots panel: every symbol with its name](tests/screenshots/15-legend.png)
 
+![Modern pins, the blue direction wedge and the compass rose](tests/screenshots/16-modern-pins.png)
+
 ---
 
 ## 4. Adding a PDF, TIFF or paper map (the useful part)
@@ -1003,7 +1008,7 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (126 checks): load without errors, the version in *Tools → About* matching
+`tests/e2e.py` (132 checks): load without errors, the version in *Tools → About* matching
 `js/version.js` with the service-worker cache named after it, **every spot type having a silhouette
 that rasterises for the canvas** (the deer marker carrying its white halo), **select-mode bulk delete**
 (tick two of three, confirm, both gone from memory and IndexedDB, mode ends), **self-hosted tiles in

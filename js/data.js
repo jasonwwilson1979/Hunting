@@ -256,9 +256,80 @@
     return null;
   };
 
+  /* ---------------- modern marker: a soft rounded pin with a white glyph ----------------
+     The silhouette alone is honest but looks dated on a phone. This is the modern
+     shape: rounded body, gentle gradient, white border, drop shadow (added by the
+     canvas) and the same silhouette knocked out in white, so a deer still reads as a
+     deer. switchable: Settings -> "Modern map pins". */
+  D.BADGE_PATH = 'M6.6 2.2h10.8a4.4 4.4 0 0 1 4.4 4.4v8.0a4.4 4.4 0 0 1-4.4 4.4h-2.7' +
+    'L12 22.7l-2.7-3.7H6.6a4.4 4.4 0 0 1-4.4-4.4V6.6a4.4 4.4 0 0 1 4.4-4.4z';
+
+  /** Lighten (pct > 0) or darken (pct < 0) a #rrggbb colour. */
+  D.shade = function (hex, pct) {
+    let h = String(hex || '#e2801f').replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    const target = pct < 0 ? 0 : 255;
+    const p = Math.abs(pct);
+    const r = Math.round(((target - ((n >> 16) & 255)) * p) + ((n >> 16) & 255));
+    const g = Math.round(((target - ((n >> 8) & 255)) * p) + ((n >> 8) & 255));
+    const b = Math.round(((target - (n & 255)) * p) + (n & 255));
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+
+  let badgeSeq = 0;
+  D.badgeSvg = function (type, opts) {
+    opts = opts || {};
+    const info = D.TYPES[type] || D.TYPES.wp;
+    const shape = D.SHAPES[info.icon] || D.SHAPES.pin;
+    const size = opts.size || 24;
+    const cls = opts.cls || 'wp-badge';
+    const gid = 'hmbadge' + (++badgeSeq);
+    const top = D.shade(info.color, 0.32);
+    const bottom = D.shade(info.color, -0.14);
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="' + size +
+      '" height="' + size + '" class="' + cls + '" aria-hidden="true">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="' + top + '"/><stop offset="1" stop-color="' + bottom + '"/>' +
+      '</linearGradient></defs>' +
+      '<path d="' + D.BADGE_PATH + '" fill="url(#' + gid + ')" stroke="rgba(255,255,255,.94)" ' +
+      'stroke-width="1.4"/>' +
+      '<g transform="translate(12 10.3) scale(0.56) translate(-12 -12)">' +
+      '<g fill="#fff" fill-rule="evenodd">' + (shape.fill || '') + '</g>' +
+      '<g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" ' +
+      'stroke-linejoin="round">' + (shape.line || '') + '</g>' +
+      '</g></svg>';
+  };
+
+  /** The modern marker as a DOM node (list rows, legend). */
+  D.badgeFor = function (type, cls) {
+    const box = document.createElement('div');
+    box.innerHTML = D.badgeSvg(type, { cls: cls || 'wp-badge', size: 24 });
+    return box.firstChild;
+  };
+
+  const badgeIcons = {};
+  D.pinBadge = function (type) {
+    const info = D.TYPES[type] || D.TYPES.wp;
+    const key = info.icon;
+    if (Object.prototype.hasOwnProperty.call(badgeIcons, key)) return badgeIcons[key] || null;
+    badgeIcons[key] = null;
+    const img = new Image();
+    img.onload = function () {
+      badgeIcons[key] = img;
+      if (D.onPinIconLoad) { try { D.onPinIconLoad(); } catch (e) { /* ignore */ } }
+    };
+    img.onerror = function () { badgeIcons[key] = false; };
+    img.src = 'data:image/svg+xml;charset=utf-8,' +
+      encodeURIComponent(D.badgeSvg(type, { size: 192 }));
+    return null;
+  };
+
   D.DEFAULT_SETTINGS = {
     units: 'imperial', coordFormat: 'dd', night: false, awake: true, highAccuracy: true,
     labels: true, grid: false, trail: true,
+    pinStyle: 'modern',       // modern rounded pins | classic silhouettes
+    compassRose: true,        // small compass on the map
     zoneAlerts: true, zoneSound: true, zoneVibrate: true, zoneShow: true,
     provider: null,          // null = choose a sensible default for the location on first run
     tiles: true,

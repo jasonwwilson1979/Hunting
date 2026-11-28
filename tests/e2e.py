@@ -631,9 +631,9 @@ def main():
                 const rows = [...document.querySelectorAll('#wpList .item')];
                 const r = rows.find(x => x.textContent.indexOf('Buck Ridge') >= 0);
                 if (!r) return null;
-                const svg = r.querySelector('.pin-mini svg.wp-shape');
+                const svg = r.querySelector('.pin-mini svg.wp-badge, .pin-mini svg.wp-shape');
                 return {
-                    icons: r.querySelectorAll('.pin-mini svg.wp-shape').length,
+                    icons: r.querySelectorAll('.pin-mini svg.wp-badge, .pin-mini svg.wp-shape').length,
                     paths: svg ? svg.querySelectorAll('path').length : 0,
                     sub: (r.querySelector('.item-sub') || {}).textContent || ''
                 };
@@ -736,7 +736,7 @@ def main():
                 return {
                     count: items.length,
                     labels: items.map(i => i.textContent.trim()),
-                    icons: items.filter(i => i.querySelector('svg.wp-shape')).length,
+                    icons: items.filter(i => i.querySelector('svg.wp-badge, svg.wp-shape')).length,
                     sheet: document.getElementById('sheetLegend').getAttribute('aria-hidden')
                 };
             }""")
@@ -747,6 +747,66 @@ def main():
             check("the legend opens from the Spots panel", legend["sheet"] == "false")
             page.evaluate("window.Hunt.App.closeSheets()")
             page.wait_for_timeout(300)
+
+            # ---------------- modern pins, heading, compass rose --------------
+            look = page.evaluate("""async () => {
+                const D = window.Hunt.Data, GPS = window.Hunt.GPS;
+                const types = Object.keys(D.TYPES);
+                for (let i = 0; i < 40; i++) {
+                    if (types.every(t => !!D.pinBadge(t))) break;
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                const badges = types.filter(t => !!D.pinBadge(t)).length;
+                const svg = D.badgeSvg('deer', { size: 40 });
+                window.Hunt.App.closeSheets();
+                document.getElementById('btnWaypoints').click();
+                await new Promise(r => setTimeout(r, 400));
+                const rowSvg = document.querySelector('#wpList .pin-mini svg');
+                const modernRow = !!(rowSvg && rowSvg.classList.contains('wp-badge'));
+                // heading + rose
+                GPS.compass.enabled = true;
+                GPS.compass.heading = 90;
+                GPS.state.status = 'ok';
+                GPS.state.lat = GPS.state.lat == null ? 44.12 : GPS.state.lat;
+                GPS.state.lon = GPS.state.lon == null ? -71.5 : GPS.state.lon;
+                GPS.state.accuracy = 8;
+                GPS.emit();
+                await new Promise(r => setTimeout(r, 300));
+                const rose = document.getElementById('miniCompass');
+                const needle = document.getElementById('mcNeedle');
+                const chip = document.getElementById('gpsText').textContent;
+                const headingState = { hidden: rose.hidden, off: rose.classList.contains('mc-off'),
+                    needle: needle.style.transform, chip: chip };
+                // switch to the classic silhouettes and back
+                document.getElementById('btnMenu').click();
+                await new Promise(r => setTimeout(r, 400));
+                const pins = document.getElementById('setModernPins');
+                pins.click();
+                await new Promise(r => setTimeout(r, 500));
+                const classic = { style: D.settings.pinStyle,
+                    row: !!(document.querySelector('#wpList .pin-mini svg.wp-shape')) };
+                pins.click();
+                await new Promise(r => setTimeout(r, 500));
+                const backModern = { style: D.settings.pinStyle,
+                    row: !!(document.querySelector('#wpList .pin-mini svg.wp-badge')) };
+                return { badges: badges, typeCount: types.length, hasGradient: svg.indexOf('linearGradient') >= 0,
+                         hasWhiteGlyph: svg.indexOf('fill="#fff"') >= 0,
+                         modernRow: modernRow, heading: headingState,
+                         classic: classic, modern: backModern };
+            }""")
+            check("every type has a modern badge that rasterises for the map",
+                  look["badges"] == look["typeCount"] and look["hasGradient"] and look["hasWhiteGlyph"],
+                  {"badges": look["badges"], "of": look["typeCount"]})
+            check("modern pins are the default in the spot list", look["modernRow"])
+            check("the compass rose is on and follows the heading",
+                  look["heading"]["hidden"] is False and look["heading"]["off"] is False and
+                  "rotate(90" in (look["heading"]["needle"] or ""), look["heading"])
+            check("the GPS chip reads out the heading",
+                  "E 90" in (look["heading"]["chip"] or ""), look["heading"]["chip"])
+            check("switching to silhouette pins works",
+                  look["classic"]["style"] == "classic" and look["classic"]["row"], look["classic"])
+            check("and back to modern pins",
+                  look["modern"]["style"] == "modern" and look["modern"]["row"], look["modern"])
 
             # ---------------- geofences ----------------
             zones = page.evaluate("""() => {

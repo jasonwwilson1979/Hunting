@@ -483,6 +483,41 @@
    */
   P.drawPin = function (x, y, color, code, selected, type) {
     const ctx = this.ctx;
+    const modern = !(H.Data && H.Data.settings && H.Data.settings.pinStyle === 'classic');
+
+    if (modern) {
+      /* Modern marker: rounded pin with a gradient, a white glyph and a soft shadow.
+         The tail tip (22.7 of 24 units) sits on the coordinate. */
+      const size = selected ? 50 : 42;
+      const bottom = y + size * 0.055;          // tail tip exactly on the point
+      const img = (type && H.Data && H.Data.pinBadge) ? H.Data.pinBadge(type) : null;
+      ctx.save();
+      if (selected) {
+        ctx.beginPath();
+        ctx.arc(x, y - size * 0.42, size * 0.62, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(226,128,31,.20)';
+        ctx.fill();
+      }
+      ctx.shadowColor = 'rgba(0,0,0,.40)';
+      ctx.shadowBlur = selected ? 11 : 8;
+      ctx.shadowOffsetY = 2.5;
+      if (img) {
+        ctx.drawImage(img, x - size / 2, bottom - size, size, size);
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y - size * 0.45, size * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#fff';
+        ctx.font = '800 13px -apple-system, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(code, x, y - size * 0.45);
+      }
+      ctx.restore();
+      return;
+    }
     const size = selected ? 58 : 46;
     const stem = selected ? 12 : 10;
     const bottom = y - stem;          // silhouette sits on the stem
@@ -649,21 +684,36 @@
       ctx.restore();
     }
 
-    // heading cone
+    // direction of view: a wide, bright wedge with an outlined edge and an arrow head
     if (pos.heading != null && isFinite(pos.heading)) {
+      const len = 78, half = 0.46;                 // ~53 degrees total
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(pos.heading * Math.PI / 180);
-      const grad = ctx.createLinearGradient(0, 0, 0, -46);
-      grad.addColorStop(0, 'rgba(226,128,31,.55)');
-      grad.addColorStop(1, 'rgba(226,128,31,0)');
-      ctx.fillStyle = grad;
+      const grad = ctx.createLinearGradient(0, 0, 0, -len);
+      grad.addColorStop(0, 'rgba(47,143,255,.62)');
+      grad.addColorStop(0.55, 'rgba(47,143,255,.26)');
+      grad.addColorStop(1, 'rgba(47,143,255,0)');
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(-17, -46);
-      ctx.lineTo(17, -46);
+      ctx.arc(0, 0, len, -Math.PI / 2 - half, -Math.PI / 2 + half);
       ctx.closePath();
+      ctx.fillStyle = grad;
       ctx.fill();
+      ctx.strokeStyle = 'rgba(47,143,255,.55)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      // arrow head at the far edge so the "uphill" end is unmistakable
+      ctx.beginPath();
+      ctx.moveTo(0, -len - 7);
+      ctx.lineTo(-5.5, -len + 2);
+      ctx.lineTo(5.5, -len + 2);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(47,143,255,.85)';
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.lineWidth = 1.2;
+      ctx.fill();
+      ctx.stroke();
       ctx.restore();
     }
 

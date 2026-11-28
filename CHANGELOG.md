@@ -10,6 +10,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.16.0] — 2026-11-27
+
+### Added
+- **Modern map pins (new default).** Rounded pin with a soft vertical gradient, a white
+  border, a drop shadow and the spot's silhouette knocked out in white, tail tip on the
+  coordinate. The same badge is used in the spot list and the legend. Settings →
+  **Modern map pins** switches back to the plain silhouettes (v1.15 style) if you prefer
+  them; the choice is remembered.
+- **Which way am I looking.** The map now draws a wide blue field-of-view wedge from
+  your position (53°, fading out, outlined, with an arrow head at the far edge), driven
+  by the compass — GPS course is used while walking if the compass is off. The GPS chip
+  reads it out (“±8 m · E 90°”) and the GPS panel has a Heading row with its source.
+- **Compass rose (toggleable).** A small translucent rose at the top right: the needle
+  points where the phone points, N is marked, and it shows “?” until a heading exists.
+  Tap it to switch the compass sensor on (needed once on iOS) or to open the compass
+  panel. Settings → **Compass rose on the map** hides it.
+
+### Changed
+- The heading wedge is now blue instead of a faint orange, so it reads on a beige topo
+  map and cannot be confused with a pin.
+
+### Tests
+- `tests/e2e.py` (132 checks): every type has a badge that rasterises, gradient and white
+  glyph present, badges are the default in the list, the rose is visible with the needle
+  at the heading and the chip reading “E 90°”, and switching to silhouettes and back works.
+
 ## [1.15.1] — 2026-11-27
 
 ### Fixed
