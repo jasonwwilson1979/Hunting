@@ -438,6 +438,10 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
 }
 .pin-mini .wp-shape { width: 36px; height: 36px; }
 .wp-shape { width: 20px; height: 20px; display: block; }
+.legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 4px 0 10px; }
+.legend-item { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.legend-item .wp-shape { width: 30px; height: 30px; flex: 0 0 auto; }
+.legend-item span { font-size: 13px; line-height: 1.15; }
 .fence-mini {
   width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
   border: 2.5px dashed currentColor; opacity: .95;

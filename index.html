@@ -227,6 +227,7 @@
     <h2>Spots <span class="count" id="wpCount"></span></h2>
     <div class="head-actions">
       <button class="icon-btn" id="btnWpSelect" type="button" title="Select spots to delete"><svg class="i"><use href="#i-select"/></svg></button>
+      <button class="icon-btn" id="btnWpLegend" type="button" title="What the symbols mean"><svg class="i"><use href="#i-info"/></svg></button>
       <button class="icon-btn" id="btnWpExport" type="button" title="Export GPX"><svg class="i"><use href="#i-download"/></svg></button>
       <button class="icon-btn" id="btnWpImport" type="button" title="Import GPX"><svg class="i"><use href="#i-upload"/></svg></button>
       <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
@@ -422,6 +423,18 @@
       and reloads the newest files from the server. Your spots, tracks and maps are kept.</p>
   </div>
 </section>
+<section class="sheet" id="sheetLegend" aria-hidden="true">
+  <header class="sheet-head">
+    <h2>Spot symbols</h2>
+    <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="sheet-body">
+    <p class="muted small">The shape on the map and in the list. The name is always shown under
+      a pin, and in the second line of each list row.</p>
+    <div class="legend-grid" id="legendGrid"></div>
+  </div>
+</section>
+
 <section class="sheet" id="sheetZones" aria-hidden="true">
   <header class="sheet-head">
     <h2>Fences <span class="count" id="zoneCount"></span></h2>
@@ -632,8 +645,10 @@
     <div class="row gap wrap">
       <button class="btn" id="btnGpsRestart" type="button">Restart GPS</button>
       <button class="btn" id="btnGpsFast" type="button">Fast Wi-Fi fix</button>
+      <button class="btn" id="btnGpsSat" type="button">Satellites only</button>
     </div>
     <p class="note small">The app asks for a quick <b>Wi-Fi / network</b> location first (seconds, 20&ndash;500 m), then refines it with satellites (3&ndash;10 m). Indoors, or on a laptop without GPS, only the network fix is possible &mdash; the phone/PC <em>location service</em> must be on for that. <b>Fast Wi-Fi fix</b> switches off the satellite step, which is the quickest way to get on the map inside a building.</p>
+    <p class="note small"><b>Airplane mode works:</b> the GPS chip only listens, so with the phone under open sky a fix arrives in 30&ndash;120 seconds; keep the app open. In that mode there is no network to help, so if it stalls press <b>Satellites only</b> and give it a minute &mdash; the app keeps retrying by itself and never gives up.</p>
   </div>
 </section>
 

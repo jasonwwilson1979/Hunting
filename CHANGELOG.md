@@ -10,6 +10,55 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.15.1] — 2026-11-27
+
+### Fixed
+- **GPS in airplane mode said "Not supported" and stopped.** Error code 2
+  (`POSITION_UNAVAILABLE`) is exactly what iOS/Android report while the chip is still
+  acquiring with no network to help, but it was mapped to the `unavailable` status,
+  whose label was "Not supported". Worse, the first timeout downgraded the watch to
+  network-only positioning — which cannot work offline — so the app then sat on a
+  hopeless mode until it was restarted.
+  - code 2/3 now mean **"waiting"**, with an honest message ("Waiting for satellites
+    (airplane mode: no network to help, this can take a minute)"); `unavailable` is
+    reserved for a browser with no geolocation API at all ("No GPS in this browser").
+  - **never downgrade while offline**, and the high-accuracy watch is patient
+    (90 s timeout instead of 45 s).
+  - a **retry loop** re-issues the watch with backoff (5 s → 10 s → … → 30 s) until a
+    fix arrives, so a cold start under open sky gets there on its own.
+  - when the network returns after an automatic downgrade, the app switches back to
+    satellites (a deliberate *Fast Wi-Fi fix* is left alone).
+  - new **GPS → Satellites only** button for airplane mode, and the panel explains
+    that 30–120 s under open sky is normal.
+
+### Tests
+- `tests/e2e.py` (126 checks): simulates the airplane-mode failure (offline + error 2)
+  and asserts the status stays "waiting", the message is about satellites, the watch
+  stays high-accuracy with a 90 s timeout, it retries by itself, and going online
+  restores the satellite watch.
+
+## [1.15.0] — 2026-11-27
+
+### Changed
+- **Every spot symbol redrawn with the details that make it readable at map size.**
+  Treestand: platform, seat rail, ladder with rungs and the tree trunk it leans on.
+  Ground blind: dome with a door arch, two windows and brush at its feet. Cabin: pitched
+  roof, chimney, door and two windows. Deer: branched antlers, muzzle, eye, tail, four
+  legs. Bear: shoulder hump, round ears with inner detail, snout, short clawed legs.
+  Turkey: a five-feather fan, wattle and beard. Trail camera: body, lens ring, PIR
+  window, IR lamps, strap and antenna. Food plot: three leaves with a soil line. Sign /
+  scrape: two staggered cloven hoof prints with dewclaws (a trail). Track / rub: trunk
+  with bark wounds and a broken branch. Kill site: target rings with a crosshair.
+  Vehicle: a car with windows and two wheels (the old pickup read as a sofa). Water, camp,
+  hazard and the plain waypoint pin were already clear and stay as they were.
+- **Spot symbols legend**: the ⓘ button in the Spots header lists all 16 symbols with
+  their names, so nothing has to be guessed.
+- The type chips on the Mark sheet keep the thin line icons, which stay legible at 15 px.
+
+### Tests
+- `tests/e2e.py` (121 checks): the legend lists all 16 drawings and opens from the Spots
+  panel; the existing silhouette/rasterise checks still cover every type.
+
 ## [1.14.0] — 2026-11-27
 
 ### Added

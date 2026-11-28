@@ -26,6 +26,8 @@
   const history = [];
   let wakeLock = null;
   let slowTimer = 0;
+  let retryTimer = 0;          // pending "ask again" after a no-fix error
+  let retryDelay = 0;          // backoff for that retry (5 s, 10 s ... 30 s)
   /** How long to wait for anything before telling the user it is slow. */
   GPS.SLOW_AFTER_MS = 12000;
 
@@ -55,6 +57,8 @@
     state.slow = false;
     state.fixes++;
     if (slowTimer) { clearTimeout(slowTimer); slowTimer = 0; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = 0; }
+    retryDelay = 0;
     if (keepHistory) {
       history.push({ lat: state.lat, lon: state.lon, accuracy: state.accuracy, t: state.timestamp });
       if (history.length > 8) history.shift();
@@ -70,7 +74,9 @@
       watchId = navigator.geolocation.watchPosition(onPosition, onError, {
         enableHighAccuracy: !!high,
         maximumAge: 5000,
-        timeout: high ? 45000 : 20000
+        // A cold satellite fix in airplane mode legitimately takes 30-120 s, so the
+        // high-accuracy watch is patient; the browser keeps it alive either way.
+        timeout: high ? 90000 : 20000
       });
     } catch (e) {
       state.status = 'error';
@@ -79,26 +85,81 @@
     }
   }
 
+  /**
+   * Ask again after "no position yet". Airplane mode is the normal case here: the
+   * phone GPS is receive-only but needs clear sky and time, and there is no network
+   * to fall back on, so we retry with a growing delay instead of giving up.
+   */
+  function retryWatch(reason) {
+    if (!state.active) return;
+    retryDelay = Math.min(30000, retryDelay ? retryDelay * 2 : 5000);
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(function () {
+      retryTimer = 0;
+      if (!state.active) return;
+      state.error = reason;
+      emit();
+      startWatch(!!state.highAccuracy);
+    }, retryDelay);
+  }
+
   function onError(err) {
+    const code = err && err.code;
     state.error = err && err.message ? err.message : 'Location error';
-    if (!err) state.status = 'error';
-    else if (err.code === 1) state.status = 'denied';
-    else if (err.code === 2) state.status = 'unavailable';
-    else if (err.code === 3) state.status = 'waiting';
-    else state.status = 'error';
-    if (state.status === 'denied') {
+    if (code === 1) {
+      state.status = 'denied';
       state.active = false;
       if (watchId != null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} watchId = null; }
-    } else if ((err.code === 2 || err.code === 3) && state.highAccuracy && !state.downgraded) {
-      // Satellites are not answering (indoors, laptop, deep valley): fall back to
-      // network/Wi-Fi positioning instead of sitting there forever.
-      state.downgraded = true;
-      state.highAccuracy = false;
-      state.error = 'No satellite fix yet \u2014 using network (Wi-Fi) location';
-      startWatch(false);
+      emit();
+      return;
     }
+    if (code === 2 || code === 3) {
+      // POSITION_UNAVAILABLE / TIMEOUT. Both mean "no fix yet", not "no GPS":
+      // they are exactly what an iPhone reports in airplane mode while the chip
+      // is still acquiring. Never call this unsupported and never stop watching.
+      const offline = navigator.onLine === false;
+      state.status = 'waiting';
+      state.slow = true;
+      if (!offline && code === 3 && state.highAccuracy && !state.downgraded) {
+        // Online, and the satellite watch timed out: a coarse Wi-Fi fix beats
+        // nothing, so try network positioning once (the "Fast Wi-Fi fix" mode).
+        state.downgraded = true;
+        state.highAccuracy = false;
+        state.error = 'No satellite fix yet \u2014 trying Wi-Fi / network location';
+        emit();
+        startWatch(false);
+        return;
+      }
+      if (!offline && !state.highAccuracy) {
+        state.error = 'No position yet \u2014 retrying';
+      } else {
+        state.error = offline
+          ? 'Waiting for satellites (airplane mode: no network to help, this can take a minute)'
+          : 'Waiting for satellites\u2026';
+      }
+      emit();
+      retryWatch(state.error);
+      return;
+    }
+    state.status = 'error';
     emit();
   }
+
+  /** Back to satellites only - the first aid for airplane mode. */
+  GPS.forceSatellites = function () {
+    state.highAccuracy = true;
+    state.downgraded = false;
+    state.error = null;
+    state.slow = false;
+    state.status = state.lat == null ? 'waiting' : 'ok';
+    state.startedAt = Date.now();
+    retryDelay = 0;
+    emit();
+    if (!state.active) { GPS.start({ highAccuracy: true }); return true; }
+    startWatch(true);
+    return true;
+  };
+
 
   /** Start watching the GPS. Safe to call repeatedly. */
   GPS.start = function (opts) {
@@ -117,6 +178,8 @@
     }
     if (watchId != null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} watchId = null; }
     if (slowTimer) { clearTimeout(slowTimer); slowTimer = 0; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = 0; }
+    retryDelay = 0;
     state.active = true;
     state.status = state.lat == null ? 'waiting' : 'ok';
     state.error = null;
@@ -151,6 +214,8 @@
     if (watchId != null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} }
     watchId = null;
     if (slowTimer) { clearTimeout(slowTimer); slowTimer = 0; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = 0; }
+    retryDelay = 0;
     state.active = false;
     state.status = 'off';
     state.slow = false;
@@ -158,6 +223,20 @@
   };
 
   GPS.restart = function (opts) { GPS.stop(); GPS.start(opts || {}); };
+
+  /* Leaving airplane mode (or getting Wi-Fi back): if we fell back to network
+     positioning automatically, go back to satellites. A deliberate
+     "Fast Wi-Fi fix" (highAccuracy=false, downgraded=false) is left alone. */
+  window.addEventListener('online', function () {
+    if (!state.active || !state.downgraded) return;
+    state.downgraded = false;
+    state.highAccuracy = true;
+    state.status = state.lat == null ? 'waiting' : 'ok';
+    state.error = 'Network is back \u2014 refining with satellites';
+    retryDelay = 0;
+    emit();
+    startWatch(true);
+  });
 
   GPS.age = function () { return state.timestamp ? Date.now() - state.timestamp : null; };
   GPS.isStale = function (ms) { return !state.timestamp || (Date.now() - state.timestamp) > (ms || 45000); };

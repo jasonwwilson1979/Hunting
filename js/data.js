@@ -28,8 +28,8 @@
   D.TYPE_ORDER = ['stand', 'blind', 'building', 'deer', 'bear', 'turkey', 'cam', 'water',
     'food', 'sign', 'track', 'kill', 'camp', 'park', 'hazard', 'wp'];
 
-  /* Line-art icons, 24x24, drawn as SVG. They are used three times: inside the
-     map pins (rasterised), on the type chips, and in the spot list. */
+  /* Line-art icons, 24x24, drawn as SVG. Used on the small type chips, where a
+     filled silhouette turns to mush at 15 px; the map and the list use D.SHAPES. */
   D.ICON_PATHS = {
     stand: '<path d="M8.5 20.5V7.5h7v13"/><path d="M6.5 7.5h11"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h7"/>',
     blind: '<path d="M3.5 19.5a8.5 8.5 0 0 1 17 0z"/><path d="M9.5 19.5V16h5v3.5"/><path d="M12 4.5V7"/>',
@@ -49,7 +49,7 @@
     pin: '<path d="M12 21s6.5-6 6.5-10.5a6.5 6.5 0 1 0-13 0C5.5 15 12 21 12 21z"/><path d="M12 12.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/>'
   };
 
-  /** Inline SVG icon for a waypoint type (chips, spot list, headers). */
+  /** Inline SVG line icon for a waypoint type (type chips, small headers). */
   D.iconFor = function (type, cls) {
     const info = D.TYPES[type] || D.TYPES.wp;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -60,103 +60,144 @@
     return svg;
   };
 
-  /* Silhouette markers: the pin is the animal/tool itself, not a circle around a
-     line icon. `fill` is solid mass, `line` is the thin bits (legs, antlers,
-     ladder rungs). Both sit on a 24x24 grid and are drawn with a white halo so
-     they survive dark forest on the map. */
   D.SHAPES = {
     stand: {
-      fill: '<path fill-rule="evenodd" d="M5.6 5.2h7.2v2.1H5.6zM5.6 8.9h12.8v1.9H5.6zM15.2 5.2h3.2v2.1h-3.2z"/>' +
-        '<path d="M19.4 3.4h1.8v18.2h-1.8z"/>',
-      line: '<path d="M6.6 8.9V5.2M18.4 8.9V5.2M8.4 10.8v9.6M15.6 10.8v9.6M8.4 13.6h7.2M8.4 16.6h7.2M8.4 19.4h7.2"/>' +
-        '<path d="M19.4 9.6l1.2-1.6M19.4 14.2l1.4-1.4" stroke-width="1.4"/>'
+      /* ladder stand: platform + seat rail + ladder, with the tree beside it */
+      fill: '<path fill-rule="evenodd" d="M4.4 8.9h12.4v1.9H4.4zM4.4 4.9h6.6v1.8H4.4z"/>' +
+        '<path d="M18.9 2.9h2.0v18.6h-2.0z"/>',
+      line: '<path d="M5.3 4.9v4.0M10.9 4.9v4.0M16.8 8.9v1.9"/>' +
+        '<path d="M7.8 10.8v9.4M13.4 10.8v9.4M7.8 12.9h5.6M7.8 15.5h5.6M7.8 18.1h5.6"/>' +
+        '<path d="M20.8 7.6l1.4-1.2M20.8 13.2l1.2-1.1" stroke-width="1.4"/>'
     },
     blind: {
-      fill: '<path fill-rule="evenodd" d="M3.4 19.6a8.6 8.6 0 0 1 17.2 0zM8.2 13.8h3v2.4h-3zM12.9 13.8h3v2.4h-3z"/>',
-      line: '<path d="M6.4 18.2c1.4-1 2.6-.4 3.8-1.2M13.8 18.4c1.4-.8 2.6-.2 3.6-1" stroke-width="1.4"/>'
+      /* ground blind: dome with a door arch, two windows and brush at the base */
+      fill: '<path fill-rule="evenodd" d="M3.0 19.4a9.0 9.0 0 0 1 18.0 0z' +
+        'M9.8 19.4v-4.4c0-1.2 1.0-2.2 2.2-2.2s2.2 1.0 2.2 2.2v4.4z' +
+        'M5.7 14.4h2.7v2.2H5.7zM15.6 14.4h2.7v2.2h-2.7z"/>',
+      line: '<path d="M3.3 19.4l1.3-2.3M20.7 19.4l-1.3-2.3M6.2 19.4l1.0-1.8M17.8 19.4l-1.0-1.8" ' +
+        'stroke-width="1.4"/>'
     },
     building: {
-      fill: '<path fill-rule="evenodd" d="M2.8 20.4V10.2L12 3.4l9.2 6.8v10.2zM9.6 20.4v-5.8h4.8v5.8zM15.8 6.2h2.2v3.6h-2.2zM5.6 12.2h3.2v2.8H5.6zM15.2 12.2h3.2v2.8h-3.2z"/>',
-      line: '<path d="M6.1 12.2v2.8M5.6 13.6h3.2" stroke-width="1.4"/>'
+      /* cabin: pitched roof, chimney, door and two windows */
+      fill: '<path fill-rule="evenodd" d="M2.6 20.7V9.9L12 2.7l9.4 7.2v10.8z' +
+        'M9.8 20.7v-6.1h4.4v6.1zM5.3 11.5h2.9v2.9H5.3zM15.8 11.5h2.9v2.9h-2.9z"/>' +
+        '<path d="M16.6 5.4h2.3v4.2h-2.3z"/>',
+      line: '<path d="M13.1 17.2h.01M5.3 14.4h2.9" stroke-width="1.5"/>'
     },
     deer: {
-      fill: '<path d="M8.8 11.4h5.6c2.3 0 4 1.5 4.2 3.6l.2 2.2H8.2l-.2-2.2c-.1-2 .8-3.6.8-3.6z"/>' +
-        '<path d="M9.6 12.6 8.2 8.6l1.7-.9 1.7 4.6z"/>' +
-        '<path fill-rule="evenodd" d="M7.2 8.9c-.5-1-.2-2.1.7-2.4l2.3-.6.6 2.7-2.2 1zM7.9 8.3a.45.45 0 1 0 0-.9.45.45 0 0 0 0 .9z"/>' +
-        '<path d="M7.6 7.4 5.4 8.3l2.1.8z"/>' +
-        '<path d="M8.7 6.3 6.9 4.6l.4 2.5z"/>' +
-        '<path d="M8.9 6.2 10 5.1l.5 1.6z"/>' +
-        '<path d="M18.6 12.6l1.4 1.5-1.9.7z"/>',
-      line: '<path d="M7.9 6.4 6.4 3.5M7.4 5.4 4.9 4.8M6.8 4.5 6 2.7M8 6.4 9.6 4.2M9 4.7l1.7-1.3"/>' +
-        '<path d="M7.6 6.1l-.9-1.4"/>' +
-        '<path d="M9.8 17.2v3.9M11.6 17.2v3.9M15.8 17.2v3.9M18 17.2v3.9"/>' +
-        '<path d="M9.8 19.4h1.8M15.8 19.4h1.8"/>'
+      /* deer, facing left: branched antlers, muzzle, eye, four legs, tail */
+      fill: '<path d="M9.9 11.6h4.8c2.4 0 4.1 1.6 4.3 3.9l.1 2.0H9.4l-.2-2.2c-.1-1.9.7-3.7.7-3.7z"/>' +
+        '<path d="M9.6 12.8 8.2 7.9l2.1-.8 1.7 4.8z"/>' +
+        '<path fill-rule="evenodd" d="M7.6 8.6c-.7-1.2-.3-2.4.8-2.8l2.4-.7.9 3.1-2.5 1.1z' +
+        'M8.2 7.9a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>' +
+        '<path d="M8.0 7.1 5.5 8.2l2.3 1.0z"/>' +
+        '<path d="M9.3 6.0 7.1 3.9l.7 3.1z"/>' +
+        '<path d="M19.2 12.3l1.7 1.5-1.9.8z"/>',
+      line: '<path d="M8.5 6.1 6.5 2.9M7.7 5.0 5.0 4.3M6.9 3.9 5.9 2.0M8.5 6.1 10.4 3.6M9.4 4.7 11.4 3.2"/>' +
+        '<path d="M10.7 17.5v3.9M12.9 17.5v3.9M16.4 17.5v3.9M18.5 17.5v3.9" stroke-width="2.1"/>'
     },
     bear: {
-      fill: '<path d="M8.8 12.4c.2-2.7 2.4-4.3 5.2-4.3l1.6.1c2.4.2 4 1.9 4.2 4.2l.2 1.9H8.2z"/>' +
-        '<path fill-rule="evenodd" d="M7.5 12.1a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4zM6.4 14.2a.45.45 0 1 0 0-.9.45.45 0 0 0 0 .9z"/>' +
-        '<path d="M5.4 12.9 3.4 13.6l1.9 1.2z"/>' +
-        '<path fill-rule="evenodd" d="M6.2 9.8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM6.2 11a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z"/>' +
-        '<path fill-rule="evenodd" d="M9.7 9.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM9.7 10.7a.65.65 0 1 0 0 1.3.65.65 0 0 0 0-1.3z"/>' +
-        '<path d="M19.8 13.2l1.6 1.2-1.8.9z"/>',
-      line: '<path d="M9.2 18.7v2.6M11.6 18.7v2.6M15.4 18.7v2.6M17.8 18.7v2.6"/>' +
-        '<path d="M8.5 21.3l.9-.9M10.9 21.3l.9-.9M14.7 21.3l.9-.9M17.1 21.3l.9-.9"/>'
+      /* bear, facing left: hump, round ears, snout, short clawed legs */
+      fill: '<path d="M8.7 11.9c.3-2.7 2.5-4.2 5.3-4.2l1.5.1c2.5.2 4.2 1.9 4.4 4.2l.2 2.4H8.3z"/>' +
+        '<path fill-rule="evenodd" d="M7.2 11.6a3.5 3.5 0 1 1 0 7.0 3.5 3.5 0 0 1 0-7z' +
+        'M6.1 14.0a.55.55 0 1 0 0-1.1.55.55 0 0 0 0 1.1z"/>' +
+        '<path d="M4.8 13.1 2.8 13.9l2.1 1.3z"/>' +
+        '<path fill-rule="evenodd" d="M5.7 9.3a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z' +
+        'M5.7 10.4a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z"/>' +
+        '<path fill-rule="evenodd" d="M9.4 9.0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z' +
+        'M9.4 10.0a.65.65 0 1 0 0 1.3.65.65 0 0 0 0-1.3z"/>' +
+        '<path d="M19.8 12.6l1.7 1.3-1.9.9z"/>',
+      line: '<path d="M9.7 18.6v2.8M12.4 18.6v2.8M15.8 18.6v2.8M18.1 18.6v2.8" stroke-width="2.3"/>' +
+        '<path d="M9.1 21.7l1.3-1.0M11.8 21.7l1.3-1.0M15.2 21.7l1.3-1.0M17.5 21.7l1.3-1.0" stroke-width="1.5"/>'
     },
     turkey: {
-      fill: '<path d="M6.6 14.2a4.7 3.6 0 1 1 9.4 0 4.7 3.6 0 0 1-9.4 0z"/>' +
-        '<path d="M14.6 12.6 21.6 5.2l.9 3.5z"/>' +
-        '<path d="M15.2 13.6 22.9 9.3l.2 3.5z"/>' +
-        '<path d="M15.3 14.6 22.6 13.5l-.9 3.4z"/>' +
-        '<path fill-rule="evenodd" d="M8.1 10.6a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8zM7.7 11.6a.4.4 0 1 0 0-.8.4.4 0 0 0 0 .8z"/>' +
-        '<path d="M9.2 11.4 7.9 9.2l2.1.5z"/>' +
-        '<path d="M7.4 10.2 5.7 10.6l1.5 1z"/>',
-      line: '<path d="M7.4 13.2c1.6 1.4 4.4 1.6 6.6.4"/>' +
-        '<path d="M10.6 12.2v3.2" opacity=".55"/>' +
-        '<path d="M9.8 17.6v3.1M12.6 17.6v3.1M9.1 20.8h1.4M11.9 20.8h1.4"/>'
+      /* turkey, facing left: five-feather fan, plump body, wattle, beard */
+      fill: '<path d="M13.7 12.3 21.3 3.2l1.0 4.2z"/>' +
+        '<path d="M14.3 12.9 22.7 6.8l.2 4.4z"/>' +
+        '<path d="M14.6 13.7 23.1 10.6l-.6 4.3z"/>' +
+        '<path d="M14.4 14.6 22.7 14.3l-1.5 4.1z"/>' +
+        '<path d="M13.9 15.3 21.3 18.2l-2.3 3.5z"/>' +
+        '<path d="M6.8 14.6a4.7 3.8 0 1 1 9.4 0 4.7 3.8 0 0 1-9.4 0z"/>' +
+        '<path fill-rule="evenodd" d="M8.3 9.9a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8z' +
+        'M7.8 11.0a.42.42 0 1 0 0-.84.42.42 0 0 0 0 .84z"/>' +
+        '<path d="M9.6 10.6 9.0 13.6l2.3-.4z"/>' +
+        '<path d="M6.7 10.0 4.6 10.7l2.0 1.0z"/>' +
+        '<path d="M6.9 12.6l-.7 1.9 1.7-1.0z"/>',
+      line: '<path d="M8.7 13.4c1.7 1.6 4.4 1.8 6.6.6" stroke-width="1.5"/>' +
+        '<path d="M10.2 16.2v3.5" stroke-width="1.3"/>' +
+        '<path d="M9.6 18.2v3.2M12.9 18.2v3.2M8.9 21.6h1.5M12.2 21.6h1.5" stroke-width="1.8"/>'
     },
     cam: {
-      fill: '<path fill-rule="evenodd" d="M4 8.6h12.6a2.2 2.2 0 0 1 2.2 2.2v6a2.2 2.2 0 0 1-2.2 2.2H4zM12.2 11.4a2.9 2.9 0 1 0 0 5.8 2.9 2.9 0 0 0 0-5.8zM12.2 12.5a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zM5.9 10.8h1.7v1.7H5.9z"/>',
-      line: '<path d="M19.4 10.4h2.2v6.4h-2.2M15.8 8.6V6.2M6 19v1.6M15 19v1.6"/>' +
-        '<path d="M5.6 15.4h.01M7.2 15.4h.01M5.6 16.8h.01M7.2 16.8h.01" stroke-width="1.6"/>'
+      /* trail camera: body, lens rings, PIR window, IR lamps, strap, antenna */
+      fill: '<path fill-rule="evenodd" d="M4.3 8.4h12.3a2.5 2.5 0 0 1 2.5 2.5v6.2a2.5 2.5 0 0 1-2.5 2.5H4.3z' +
+        'M11.6 11.0a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6z' +
+        'M11.6 12.2a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2z' +
+        'M5.5 10.7h2.0v2.0h-2z"/>',
+      line: '<path d="M19.1 9.7h2.6v7.6h-2.6"/>' +
+        '<path d="M15.4 8.4V5.7M17.7 5.7l1.8-2.2" stroke-width="1.6"/>' +
+        '<path d="M5.7 14.5h.01M7.3 14.5h.01M5.7 16.1h.01M7.3 16.1h.01" stroke-width="1.8"/>' +
+        '<path d="M6.3 19.6v1.6M15.0 19.6v1.6" stroke-width="2"/>'
     },
     water: {
-      fill: '<path d="M12 3.1c3.7 4.4 6.1 7.4 6.1 10.1a6.1 6.1 0 0 1-12.2 0c0-2.7 2.4-5.7 6.1-10.1z"/>',
+      fill: '<path fill-rule="evenodd" d="M12 2.9c3.9 4.7 6.3 7.8 6.3 10.6a6.3 6.3 0 0 1-12.6 0C5.7 10.7 8.1 7.6 12 2.9z' +
+        'M10.0 12.4a1.5 1.5 0 1 0 1.7-2.4 1.7 1.7 0 0 0-1.7 2.4z"/>',
       line: ''
     },
     food: {
-      fill: '<path d="M12 12.4C8.3 12.4 5.8 10.1 5.8 6.5c3.8 0 6.2 2.4 6.2 5.9z"/>' +
-        '<path d="M12 12.4c3.7 0 6.2-2.3 6.2-5.9-3.8 0-6.2 2.4-6.2 5.9z"/>',
-      line: '<path d="M12 12.4v8.2"/>'
+      /* food plot: three leaves, stem, soil line */
+      fill: '<path d="M11.7 11.9C8.1 11.9 5.6 9.6 5.6 6.0c3.8 0 6.1 2.3 6.1 5.9z"/>' +
+        '<path d="M12.3 11.9c3.6 0 6.1-2.3 6.1-5.9-3.8 0-6.1 2.3-6.1 5.9z"/>' +
+        '<path d="M12 3.2c1.7 1.7 1.7 4.5 0 6.2-1.7-1.7-1.7-4.5 0-6.2z"/>',
+      line: '<path d="M12 11.6v8.8" stroke-width="2.2"/>' +
+        '<path d="M7.2 20.6h9.6" stroke-width="1.6"/>'
     },
     sign: {
-      fill: '<path d="M8.4 4.2c1.6 0 2.5 1.5 2.5 3.1 0 2-1.2 3.4-2.5 5.5-1.3-2.1-2.5-3.5-2.5-5.5 0-1.6.9-3.1 2.5-3.1z"/>' +
-        '<path d="M15.6 9.4c1.6 0 2.5 1.5 2.5 3.1 0 2-1.2 3.4-2.5 5.5-1.3-2.1-2.5-3.5-2.5-5.5 0-1.6.9-3.1 2.5-3.1z"/>',
-      line: '<path d="M7.2 16.4v1.9M9.6 16.4v1.9M14.4 20.2v-1.9M16.8 20.2v-1.9"/>'
-    },
-    track: {
-      fill: '<path fill-rule="evenodd" d="M9.6 3.4h4.8l-.4 17.2H10zM9.2 9.2h5.6v1.5H9.2zM9.1 13.4h5.8v1.5H9.1z"/>',
-      line: '<path d="M12 3.4v17.2"/>'
-    },
-    kill: {
-      fill: '<path d="M12 2.4l1.9 4.8 4.6-2.3-2.3 4.6 4.8 1.9-4.8 1.9 2.3 4.6-4.6-2.3L12 21.6l-1.9-4.8-4.6 2.3 2.3-4.6L3 12.6l4.8-1.9-2.3-4.6 4.6 2.3z"/>',
+      /* two cloven hoof prints, staggered with dewclaws - a deer trail */
+      fill: '<path d="M7.4 2.6c.9 0 1.4 1.0 1.4 2.1 0 1.5-.7 2.5-1.4 4.0-.7-1.5-1.4-2.5-1.4-4.0 0-1.1.5-2.1 1.4-2.1z"/>' +
+        '<path d="M10.4 2.6c.9 0 1.4 1.0 1.4 2.1 0 1.5-.7 2.5-1.4 4.0-.7-1.5-1.4-2.5-1.4-4.0 0-1.1.5-2.1 1.4-2.1z"/>' +
+        '<path d="M6.8 10.0c.5 0 .8.5.8 1.1s-.4 1.2-.8 1.8c-.4-.6-.8-1.2-.8-1.8s.3-1.1.8-1.1z"/>' +
+        '<path d="M11.0 10.0c.5 0 .8.5.8 1.1s-.4 1.2-.8 1.8c-.4-.6-.8-1.2-.8-1.8s.3-1.1.8-1.1z"/>' +
+        '<path d="M13.3 11.2c.9 0 1.4 1.0 1.4 2.1 0 1.5-.7 2.5-1.4 4.0-.7-1.5-1.4-2.5-1.4-4.0 0-1.1.5-2.1 1.4-2.1z"/>' +
+        '<path d="M16.3 11.2c.9 0 1.4 1.0 1.4 2.1 0 1.5-.7 2.5-1.4 4.0-.7-1.5-1.4-2.5-1.4-4.0 0-1.1.5-2.1 1.4-2.1z"/>' +
+        '<path d="M12.7 18.6c.5 0 .8.5.8 1.1s-.4 1.2-.8 1.8c-.4-.6-.8-1.2-.8-1.8s.3-1.1.8-1.1z"/>' +
+        '<path d="M16.9 18.6c.5 0 .8.5.8 1.1s-.4 1.2-.8 1.8c-.4-.6-.8-1.2-.8-1.8s.3-1.1.8-1.1z"/>',
       line: ''
     },
+    track: {
+      /* rub: tree trunk with two bark wounds, a broken branch, strips at the base */
+      fill: '<path d="M9.1 2.6h5.2l.4 17.4H8.9z"/>' +
+        '<path fill-rule="evenodd" d="M9.1 8.2l2.2-1.4 1.2 1.6-2.2 1.4zM9.0 13.2l2.4-1.5 1.2 1.6-2.4 1.5z"/>',
+      line: '<path d="M14.3 6.4l2.9-2.7M14.4 9.2l1.7-.5" stroke-width="2.1"/>' +
+        '<path d="M8.9 20.2l-2.1 1.7M11.8 20.4v1.8M14.7 20.2l2.1 1.7" stroke-width="1.4"/>'
+    },
+    kill: {
+      /* impact site: target rings with a crosshair */
+      fill: '<path fill-rule="evenodd" d="M12 3.4a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2z' +
+        'M12 6.4a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2z"/>' +
+        '<path d="M12 9.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z"/>',
+      line: '<path d="M12 1.4v4.0M12 18.6v4.0M1.4 12h4.0M18.6 12h4.0" stroke-width="1.9"/>'
+    },
     camp: {
-      fill: '<path fill-rule="evenodd" d="M2.4 19.8 12 3.6l9.6 16.2zM12 19.8l-2.9-5.2h5.8z"/>',
-      line: '<path d="M3.4 21.2h17.2"/>'
+      fill: '<path fill-rule="evenodd" d="M2.3 19.8 12 3.3l9.7 16.5zM12 19.8l-2.9-5.1h5.8z"/>',
+      line: '<path d="M3.1 21.4h17.8" stroke-width="2"/>' +
+        '<path d="M2.9 21.2 1.3 17.3M21.1 21.2l1.6-3.9" stroke-width="1.4"/>'
     },
     park: {
-      fill: '<path d="M2.8 15.6v-3.8h6.4l2.4 2.6h9.6v5.1h-1.6a2.5 2.5 0 0 0-5 0h-5.6a2.5 2.5 0 0 0-5 0H2.8z"/>' +
-        '<path d="M7.2 18.9a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8z"/>' +
-        '<path d="M17.4 18.9a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8z"/>',
-      line: '<path d="M9.2 11.8v3.8M13.2 14.4h5.2"/>'
+      /* vehicle: car body, windows, two wheels (reads at 46 px on a phone) */
+      fill: '<path d="M2.6 15.6c0-1.3.9-2.2 2.2-2.2h1.5l2.2-3.2c.4-.6 1.1-1 1.8-1h4.5c.8 0 1.5.4 1.9 1l2.1 3.2h1.9c1.3 0 2.2.9 2.2 2.2v1.4H2.6z"/>' +
+        '<path fill-rule="evenodd" d="M8.4 13.4l1.7-2.5h2.8v2.5zM13.6 10.9h2.0l1.6 2.5h-3.6z"/>' +
+        '<path d="M6.7 18.8a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6z"/>' +
+        '<path d="M17.3 18.8a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6z"/>',
+      line: '<path d="M6.7 16.5a1.6 1.6 0 1 1 0-3.2 1.6 1.6 0 0 1 0 3.2zM17.3 16.5a1.6 1.6 0 1 1 0-3.2 1.6 1.6 0 0 1 0 3.2z" ' +
+        'stroke-width="1.5"/>'
     },
     hazard: {
-      fill: '<path fill-rule="evenodd" d="M12 2.6 22.6 21.4H1.4zM10.9 8.9h2.2v5.9h-2.2zM10.9 16.2h2.2v2.2h-2.2z"/>',
+      fill: '<path fill-rule="evenodd" d="M12 2.5 22.7 21.5H1.3zM10.9 8.8h2.2v6.0h-2.2zM10.9 16.2h2.2v2.3h-2.2z"/>',
       line: ''
     },
     pin: {
-      fill: '<path fill-rule="evenodd" d="M12 21.6S5.2 14.9 5.2 10.1a6.8 6.8 0 1 1 13.6 0C18.8 14.9 12 21.6 12 21.6zM12 12.6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>',
+      fill: '<path fill-rule="evenodd" d="M12 21.6S5.2 14.9 5.2 10.1a6.8 6.8 0 1 1 13.6 0C18.8 14.9 12 21.6 12 21.6z' +
+        'M12 12.6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>',
       line: ''
     }
   };

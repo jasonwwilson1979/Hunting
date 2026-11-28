@@ -53,7 +53,7 @@
     'btnAccountServerSave', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'btnLayerUpload', 'metaDeviceNote', 'metaFoot', 'appVersion', 'btnAppUpdate',
     'btnWpSelect', 'wpSelectBar', 'wpSelectCount', 'btnWpSelectAll', 'btnWpSelectNone',
-    'btnWpSelectDelete', 'providerNote', 'providerLicence', 'licenceList', 'btnOpenLicences',
+    'btnWpSelectDelete', 'btnWpLegend', 'legendGrid', 'providerNote', 'providerLicence', 'licenceList', 'btnOpenLicences',
     'licencePageLink', 'zoneList', 'zoneCount', 'zoneStatus',
     'btnZoneAdd', 'btnOpenZones', 'setZoneSound', 'setZoneVibrate', 'setZoneShow',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
@@ -72,7 +72,7 @@
     'btnCalibPoints', 'btnCalibDrag', 'calibInfo', 'sheetCalibPoints', 'btnCalibResetPts',
     'calibPtHint', 'calibCanvas', 'calibPts', 'btnCalibApply', 'calibRot', 'calibRotVal',
     'mapRotateRow', 'mapRotValue', 'btnRotLeft', 'btnRotRight', 'btnRot180',
-    'sheetGps', 'gpsDetails', 'btnGpsRestart', 'btnGpsFast', 'sheetBackup', 'btnBackupExport',
+    'sheetGps', 'gpsDetails', 'btnGpsRestart', 'btnGpsFast', 'btnGpsSat', 'sheetBackup', 'btnBackupExport',
     'btnBackupImport', 'fileBackup',
     'btnExportWpGpx', 'btnExportTracksGpx', 'btnImportGpx', 'fileGpx', 'storageInfo',
     'btnPersist'];
@@ -1401,6 +1401,21 @@
     });
   }
 
+  /** Plain-language legend: every type as it is drawn, with its name. */
+  function renderLegend() {
+    if (!el.legendGrid) return;
+    el.legendGrid.innerHTML = '';
+    D.TYPE_ORDER.forEach(function (type) {
+      const info = D.TYPES[type];
+      const item = U.el('div', { class: 'legend-item', 'data-type': type });
+      const icon = U.el('span', { style: 'color:' + info.color });
+      icon.appendChild(D.shapeFor(type, 'wp-shape'));
+      item.appendChild(icon);
+      item.appendChild(U.el('span', { text: info.label }));
+      el.legendGrid.appendChild(item);
+    });
+  }
+
   /** Spots that pass the search box, nearest first. */
   function visibleWaypoints() {
     const st = GPS.state;
@@ -2545,8 +2560,8 @@
   /* ------------------------------- GPS panel ------------------------------- */
   function gpsStatusText(st) {
     return ({
-      off: 'Off', waiting: 'Searching (Wi-Fi first, then satellites)', ok: 'Fixed', denied: 'Permission denied',
-      unavailable: 'Not supported', insecure: 'Needs HTTPS', error: 'Error'
+      off: 'Off', waiting: 'Waiting for a fix', ok: 'Fixed', denied: 'Permission denied',
+      unavailable: 'No GPS in this browser', insecure: 'Needs HTTPS', error: 'Error'
     })[st.status] || st.status;
   }
 
@@ -2832,6 +2847,10 @@
       renderWaypoints();
     });
     U.on(el.btnWpSelectDelete, 'click', deleteSelectedSpots);
+    U.on(el.btnWpLegend, 'click', function () {
+      renderLegend();
+      openSheet('sheetLegend');
+    });
     U.on(el.btnWpExport, 'click', exportWpGpx);
     U.on(el.btnWpImport, 'click', function () { el.fileGpx.click(); });
     U.on(el.btnWptSave, 'click', saveWptEdits);
@@ -3133,6 +3152,16 @@
       GPS.restart({ highAccuracy: D.settings.highAccuracy });
       U.toast('Restarting GPS\u2026', 'ok');
     });
+    U.on(el.btnGpsSat, 'click', function () {
+      // Airplane mode: satellites are the only source, so stop asking the network
+      // and let the chip work. The watch keeps retrying on its own.
+      D.settings.highAccuracy = true;
+      if (el.setHighAcc) el.setHighAcc.checked = true;
+      D.saveSettings();
+      GPS.forceSatellites();
+      U.toast('Satellites only — give it a minute under open sky', 'ok', 3600);
+    });
+
     U.on(el.btnGpsFast, 'click', function () {
       // Quick network/Wi-Fi fix: no satellite wait (the usual answer indoors).
       D.settings.highAccuracy = false;

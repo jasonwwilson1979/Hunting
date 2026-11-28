@@ -329,6 +329,7 @@ Accounts live in this server's database — no external service, no email confir
 | *The server replied with a web page instead of JSON* | Something in front (Cloudflare **Access**, an auth proxy, a captive portal) intercepted `/api/`. Sign in there first, or bypass `/api/*` for that app. |
 | *Could not reach the server* | Wrong host/port, or the container is down. Check `curl -sk https://<host>:8443/api/me/`. |
 | *I don't see a button the docs mention* (Sync spots, Edit on a map, state/county fields) | The phone is running a cached copy of the app. **Tools → About** shows `HuntMap v…` — compare it with `js/version.js`. Press **Tools → About → Update app** (clears the cache, unregisters the service worker, reloads); your data is kept. Then **Tools → Account → Check server**: `app v1.11.0 · server v4 …` proves both ends are current. |
+| *GPS says “Not supported” / “No GPS” in airplane mode* | Fixed in **v1.15.1**: iOS reports error 2 (“position unavailable”) while the chip is still acquiring. The app now says “Waiting for satellites”, keeps the high-accuracy watch (90 s) and retries by itself; press **GPS → Satellites only** and give it 30–120 s under open sky. The message only really means no GPS when it reads “No GPS in this browser”. |
 | *Deleted spots come back after a sync* | Fixed in **v1.10.1**: the app sent a deletion without coordinates and the server skipped it. Redeploy the container **and** press **Tools → About → Update app** on the phone (both sides carry the fix). If the account sheet says *"N deletions not applied by the server — it is an older build"*, the container is still the old image. |
 | *Check server says `0 maps in the library`* | The library really is empty: it only holds maps you uploaded. Add a map on the phone with **Copy to my PC library** ticked (it is ticked by default when signed in), use **Maps → Your maps → Edit → Copy to my PC library** for a map already on the phone, or drop files in `/upload/`. |
 | **CSRF verification failed. Request aborted.** | TLS ended at a proxy/Cloudflare but Django thought it was http. Now handled automatically when the request comes from a local proxy (see below). If you front it with a proxy on *another* machine, set `HUNTMAP_PROXY_SSL=1`, `HUNTMAP_FORWARDED_HOST=1` and `HUNTMAP_ORIGINS=https://your.hostname`. |
@@ -684,7 +685,8 @@ circle: **treestand** (ladder stand), **ground blind** (dome with a window), **b
 (classic pin). Each is in its type colour with a white halo so it reads over dark forest and shadow,
 stands on a short stem, and the small dot at the bottom is the exact coordinate. The same shapes are
 used in the spot list and on the spot sheet; the little type chips keep thin line icons, which stay
-clear at 15 px.
+clear at 15 px. Not sure what a shape is? The **ⓘ button in the Spots header** opens a legend
+that lists all 16 drawings with their names.
 
 **Going to a spot.** Open **Spots** and tap a row: the map jumps to that spot (zooming in if you
 were far out), the pin is highlighted and the list closes — the toast tells you how far it is and
@@ -738,6 +740,8 @@ Other gestures:
 ![Fences: dashed circles on the map and the panel that watches them](tests/screenshots/13-fences.png)
 
 ![The bigger, more detailed markers](tests/screenshots/14-big-pins.png)
+
+![The legend in the Spots panel: every symbol with its name](tests/screenshots/15-legend.png)
 
 ---
 
@@ -999,11 +1003,11 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (119 checks): load without errors, the version in *Tools → About* matching
+`tests/e2e.py` (126 checks): load without errors, the version in *Tools → About* matching
 `js/version.js` with the service-worker cache named after it, **every spot type having a silhouette
 that rasterises for the canvas** (the deer marker carrying its white halo), **select-mode bulk delete**
 (tick two of three, confirm, both gone from memory and IndexedDB, mode ends), **self-hosted tiles in
-commercial mode** (paid mode picked up, community/Esri sources hidden, your tiles the default, tiles
+symbols legend** (16 drawings with names, opened from the Spots panel), **airplane-mode GPS** (a no-fix error keeps waiting and retrying instead of claiming “not supported”), **commercial mode** (paid mode picked up, community/Esri sources hidden, your tiles the default, tiles
 fetched from `/tiles/…`, the credit being a link to the OSM copyright page, the Licences sheet listing
 what is withheld, a stored forbidden base map replaced on load), **geofences** (state adopted on the first fix, edge slack, enter/exit, cooldown, disabled fences, add/edit/delete through the panel), **the native shell** (detected, labelled in About, no service worker, no JS errors), GPS fix (two-phase: a quick network/Wi-Fi request
 then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button

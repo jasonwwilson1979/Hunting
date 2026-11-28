@@ -723,6 +723,31 @@ def main():
             page.click("#sheetWaypoints [data-close]")
             page.wait_for_timeout(300)
 
+            # ---------------- legend ----------------
+            page.evaluate("""() => {
+                window.Hunt.App.closeSheets();
+                document.getElementById('btnWaypoints').click();
+            }""")
+            page.wait_for_timeout(500)
+            page.evaluate("document.getElementById('btnWpLegend').click()")
+            page.wait_for_timeout(500)
+            legend = page.evaluate("""() => {
+                const items = [...document.querySelectorAll('#legendGrid .legend-item')];
+                return {
+                    count: items.length,
+                    labels: items.map(i => i.textContent.trim()),
+                    icons: items.filter(i => i.querySelector('svg.wp-shape')).length,
+                    sheet: document.getElementById('sheetLegend').getAttribute('aria-hidden')
+                };
+            }""")
+            check("the spot symbols legend lists every type with its drawing",
+                  legend["count"] == 16 and legend["icons"] == 16 and
+                  "Deer" in legend["labels"] and "Treestand" in legend["labels"],
+                  legend["labels"])
+            check("the legend opens from the Spots panel", legend["sheet"] == "false")
+            page.evaluate("window.Hunt.App.closeSheets()")
+            page.wait_for_timeout(300)
+
             # ---------------- geofences ----------------
             zones = page.evaluate("""() => {
                 const Z = window.Hunt.Zones;
@@ -792,6 +817,60 @@ def main():
                   page.evaluate("window.Hunt.Zones.list.some(z => z.name === 'Sanctuary')") is False)
             page.evaluate("window.Hunt.App.closeSheets()")
             page.wait_for_timeout(300)
+
+            # ---------------- airplane mode: no fix is not "not supported" --------------
+            air = page.evaluate("""async () => {
+                const GPS = window.Hunt.GPS;
+                const realWatch = navigator.geolocation.watchPosition;
+                const realClear = navigator.geolocation.clearWatch;
+                const realGet = navigator.geolocation.getCurrentPosition;
+                const realOnline = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+                let calls = 0;
+                Object.defineProperty(navigator, 'onLine', { configurable: true, get: function () { return false; } });
+                navigator.geolocation.watchPosition = function (ok, err, opts) {
+                    calls++;
+                    window.__lastOpts = opts;
+                    setTimeout(function () { err && err({ code: 2, message: 'Position unavailable' }); }, 10);
+                    return calls;
+                };
+                navigator.geolocation.getCurrentPosition = function (ok, err) {
+                    setTimeout(function () { err && err({ code: 2 }); }, 10);
+                };
+                navigator.geolocation.clearWatch = function () {};
+                GPS.restart({ highAccuracy: true });
+                await new Promise(function (r) { setTimeout(r, 900); });
+                const first = {
+                    status: GPS.state.status, error: GPS.state.error,
+                    highAccuracy: GPS.state.highAccuracy, calls: calls,
+                    timeout: window.__lastOpts && window.__lastOpts.timeout
+                };
+                await new Promise(function (r) { setTimeout(r, 5600); });
+                const retried = calls;
+                GPS.state.downgraded = true;             // as if we had fallen back
+                window.dispatchEvent(new Event('online'));
+                await new Promise(function (r) { setTimeout(r, 250); });
+                const restored = { highAccuracy: GPS.state.highAccuracy,
+                                   downgraded: GPS.state.downgraded };
+                GPS.stop();
+                navigator.geolocation.watchPosition = realWatch;
+                navigator.geolocation.getCurrentPosition = realGet;
+                navigator.geolocation.clearWatch = realClear;
+                if (realOnline) Object.defineProperty(Navigator.prototype, 'onLine', realOnline);
+                else delete navigator.onLine;
+                return { first: first, retried: retried, restored: restored };
+            }""")
+            first = air["first"]
+            check("a no-fix error in airplane mode is not called unsupported",
+                  first["status"] == "waiting", first)
+            check("the message talks about satellites, not a broken GPS",
+                  "satellite" in (first["error"] or "").lower(), first["error"])
+            check("it stays on the satellite watch instead of dropping to the network",
+                  first["highAccuracy"] is True and first["timeout"] == 90000, first)
+            check("it keeps asking on its own (retry after a no-fix)",
+                  air["retried"] > first["calls"], air["retried"])
+            check("coming back online restores the satellite watch",
+                  air["restored"]["highAccuracy"] is True and
+                  air["restored"]["downgraded"] is False, air["restored"])
 
             # ---------------- native (Capacitor) shell ----------------
             ctx3 = browser.new_context(viewport={"width": 390, "height": 844},
