@@ -1,0 +1,16 @@
+{
+  "name": "huntmap-native",
+  "version": "1.13.0",
+  "private": true,
+  "description": "Capacitor shell for HuntMap (iOS/Android). The web app itself needs no build step; this only wraps it in a native container.",
+  "scripts": {
+    "native:www": "sh scripts/build-native.sh",
+    "native:add:ios": "npx cap add ios",
+    "native:add:android": "npx cap add android",
+    "native:sync": "npm run native:www && npx cap sync",
+    "native:open:ios": "npx cap open ios",
+    "native:open:android": "npx cap open android"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

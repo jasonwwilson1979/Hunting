@@ -94,9 +94,11 @@ def main():
                 if m.type != "error":
                     return
                 text = m.text
-                # A tile server legitimately answers 404 where no tile exists; the
-                # app treats that as "no tile" and carries on, so it is not a bug.
-                if "Failed to load resource" in text and "404" in text:
+                # Statuses this app handles on purpose, and that a browser still
+                # prints: a tile miss (404), a signed-out API call (401) or a map
+                # that is not yours (403). A failing test shows up as a pageerror.
+                if "Failed to load resource" in text and any(
+                        s in text for s in ("404", "401", "403")):
                     return
                 errors.append("console: " + text)
 
@@ -408,6 +410,58 @@ def main():
             left = page2.evaluate("window.Hunt.Data.waypoints.map(function (w) { return w.name; })")
             check("the other device drops the deleted spot", "Sync Ridge" not in left, left)
             ctx3.close()
+
+            # ---------------- native app path: bearer token + CORS ----------------
+            native = page.evaluate("""async () => {
+                const S = window.Hunt.Sync;
+                const realIsNative = S.isNative;
+                S.isNative = function () { return true; };          // pretend to be the shell
+                await S.setServerUrl(location.origin);
+                const wrong = await S.login('scout', 'not-the-password')
+                    .then(() => 'ok', e => (e && e.code) || 'error');
+                const login = await S.login('scout', 'huntmap-pass-1').then(j => j, () => null);
+                const token = S.token;
+                const me = await S.authFetch('/api/me/').then(r => r.json());
+                const file = await S.authFetch('/api/maps/1/file').then(r => r.status, () => -1);
+                const exported = await S.exportAccount().then(j => (j.maps || []).length, () => -1);
+                await S.logout();
+                const after = await S.authFetch('/api/me/').then(r => r.json(), () => null);
+                const stored = await window.Hunt.DB.kvGet('apiToken', null);
+                S.isNative = realIsNative;
+                return {
+                    wrong: wrong, user: login && login.user, hasToken: !!(login && login.token),
+                    tokenLen: token ? token.length : 0, me: me && me.user,
+                    file: file, exported: exported, after: after && after.user,
+                    stored: stored
+                };
+            }""")
+            check("a wrong password gets no device token",
+                  native["wrong"] == "bad-credentials", native["wrong"])
+            check("signing in on a device issues a bearer token",
+                  bool(native["hasToken"]) and native["tokenLen"] > 30, native)
+            check("the token authenticates requests without a cookie",
+                  native["me"] == "scout", native["me"])
+            check("map files download with the token", native["file"] == 200, native["file"])
+            check("data export works over the token", native["exported"] >= 1, native["exported"])
+            check("signing out revokes the token and forgets it",
+                  native["after"] is None and native["stored"] is None, native)
+
+            cors = page.request.fetch(BASE + "/api/sync/", method="OPTIONS", headers={
+                "Origin": "capacitor://localhost",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            })
+            check("the native origin passes the CORS preflight",
+                  cors.status == 204 and
+                  cors.headers.get("access-control-allow-origin") == "capacitor://localhost" and
+                  "Authorization" in (cors.headers.get("access-control-allow-headers") or ""),
+                  {"status": cors.status,
+                   "allow": cors.headers.get("access-control-allow-origin")})
+            evil = page.request.fetch(BASE + "/api/me/", method="GET",
+                                      headers={"Origin": "https://not-your-site.example"})
+            check("other websites get no CORS grant",
+                  evil.headers.get("access-control-allow-origin") is None,
+                  evil.headers.get("access-control-allow-origin"))
 
             check("no JS errors at the end", not errors, errors[:3])
             browser.close()

@@ -19,6 +19,8 @@ const SHELL = [
   './js/map.js',
   './js/gps.js',
   './js/data.js',
+  './js/zones.js',
+  './js/native.js',
   './js/pdfmap.js',
   './js/sync.js',
   './js/app.js',

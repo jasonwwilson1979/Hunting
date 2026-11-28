@@ -432,12 +432,16 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
 .item-right { font-size: 11.5px; color: var(--dim); text-align: right; flex: 0 0 auto; white-space: pre-line; }
 .empty { padding: 18px 4px; color: var(--dim); font-size: 13px; text-align: center; }
 .pin-mini {
-  width: 34px; height: 34px; flex: 0 0 auto; border-radius: 0;
+  width: 38px; height: 38px; flex: 0 0 auto; border-radius: 0;
   display: grid; place-items: center;
   filter: drop-shadow(0 1px 1.4px rgba(0, 0, 0, .42));
 }
-.pin-mini .wp-shape { width: 30px; height: 30px; }
+.pin-mini .wp-shape { width: 36px; height: 36px; }
 .wp-shape { width: 20px; height: 20px; display: block; }
+.fence-mini {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
+  border: 2.5px dashed currentColor; opacity: .95;
+}
 
 /* Spots panel: select several spots and delete them together */
 .select-bar {
@@ -484,7 +488,7 @@ input::placeholder, textarea::placeholder { color: var(--dim); opacity: .75; }
 }
 .title-ic .wp-ic { width: 18px; height: 18px; }
 .title-ic.shape-ic { background: none; }
-.title-ic.shape-ic .wp-shape { width: 26px; height: 26px; }
+.title-ic.shape-ic .wp-shape { width: 30px; height: 30px; }
 .provider-list { display: flex; flex-direction: column; }
 .prov {
   display: flex; align-items: center; gap: 10px; padding: 9px 2px;

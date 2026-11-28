@@ -6,11 +6,12 @@
   const H = window.Hunt;
   const DB = H.DB = {};
   const NAME = 'huntmap';
-  const VERSION = 1;
+  const VERSION = 2;
   const STORES = {
     waypoints: { keyPath: 'id' },
     tracks: { keyPath: 'id' },
     layers: { keyPath: 'id' },
+    zones: { keyPath: 'id' },      // geofences (added in v2; the upgrade keeps old data)
     settings: { keyPath: 'id' },
     kv: { keyPath: null }
   };

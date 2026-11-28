@@ -723,7 +723,101 @@ def main():
             page.click("#sheetWaypoints [data-close]")
             page.wait_for_timeout(300)
 
-            # -------- self-hosted tiles + commercial (paid-site) mode --------
+            # ---------------- geofences ----------------
+            zones = page.evaluate("""() => {
+                const Z = window.Hunt.Zones;
+                const lat = 44.2, lon = -71.5;
+                Z.list = [Z.newZone({ name: 'Bedding', lat: lat, lon: lon, radius: 200,
+                                      onEnter: true, onExit: true })];
+                Z.resetState();
+                const near = Z.check(lat, lon, 1000000);              // adopt state
+                const slope = Z.check(lat + 0.00185, lon, 1040000);    // 205 m: inside + slack
+                const away = Z.check(lat + 0.01, lon, 1080000);        // ~1.1 km: exit
+                const back = Z.check(lat, lon, 1120000);               // enter again
+                const again = Z.check(lat + 0.01, lon, 1121000);       // cooldown holds it
+                const off = Z.list[0];
+                off.enabled = false;
+                const disabled = Z.check(lat, lon, 1200000);
+                off.enabled = true;
+                return {
+                    adopt: near.length, slack: slope.length,
+                    away: away.map(function (e) { return e.type; }),
+                    back: back.map(function (e) { return e.type; }),
+                    cool: again.length, disabled: disabled.length,
+                    radius: off.radius, inside: Z.stateFor(off.id).inside
+                };
+            }""")
+            check("a fence adopts its state silently on the first fix", zones["adopt"] == 0, zones)
+            check("slack stops a fence flapping at the edge", zones["slack"] == 0, zones)
+            check("walking out fires an exit", zones["away"] == ["exit"], zones)
+            check("walking back in fires an enter", zones["back"] == ["enter"], zones)
+            check("the cooldown suppresses repeats", zones["cool"] == 0, zones)
+            check("a fence that is off never fires", zones["disabled"] == 0, zones)
+
+            # fence through the UI: Tools → Fences → + → name/radius → Add
+            page.evaluate("""() => {
+                window.Hunt.App.closeSheets();
+                document.getElementById('btnMenu').click();
+            }""")
+            page.wait_for_timeout(500)
+            page.evaluate("document.getElementById('btnOpenZones').click()")
+            page.wait_for_timeout(600)
+            check("the Fences panel opens", page.is_visible("#sheetZones"))
+            page.evaluate("document.getElementById('btnZoneAdd').click()")
+            page.wait_for_timeout(600)
+            page.fill("#zoneName", "Sanctuary")
+            page.fill("#zoneRadius", "240")
+            page.click("#modalOk")
+            page.wait_for_timeout(900)
+            fence = page.evaluate("""() => ({
+                rows: [...document.querySelectorAll('#zoneList .item-title')].map(e => e.textContent),
+                onMap: (window.Hunt.App.map.zones || []).length,
+                radius: (window.Hunt.Zones.list.find(z => z.name === 'Sanctuary') || {}).radius,
+                sub: (document.querySelector('#zoneList .item-sub') || {}).textContent || ''
+            })""")
+            check("a fence added from the panel is stored and drawn",
+                  "Sanctuary" in fence["rows"] and fence["onMap"] >= 1 and fence["radius"] == 240,
+                  fence)
+            check("the fence row says what it watches", "radius" in fence["sub"], fence["sub"])
+            page.evaluate("""() => {
+                const row = [...document.querySelectorAll('#zoneList .item')]
+                    .find(r => r.textContent.indexOf('Sanctuary') >= 0);
+                const del = [...row.querySelectorAll('.mini-btn')].find(b => b.textContent === 'Delete');
+                del.click();
+            }""")
+            page.wait_for_timeout(500)
+            page.click("#modalOk")
+            page.wait_for_timeout(700)
+            check("deleting a fence removes it",
+                  page.evaluate("window.Hunt.Zones.list.some(z => z.name === 'Sanctuary')") is False)
+            page.evaluate("window.Hunt.App.closeSheets()")
+            page.wait_for_timeout(300)
+
+            # ---------------- native (Capacitor) shell ----------------
+            ctx3 = browser.new_context(viewport={"width": 390, "height": 844},
+                                       device_scale_factor=2)
+            ctx3.add_init_script("""window.Capacitor = {
+                isNativePlatform: function () { return true; },
+                getPlatform: function () { return 'ios'; },
+                Plugins: {}
+            };""")
+            pn = ctx3.new_page()
+            errs_native = []
+            pn.on("pageerror", lambda e: errs_native.append(str(e)))
+            pn.goto(BASE + "/index.html", wait_until="load")
+            pn.wait_for_timeout(2500)
+            native = pn.evaluate("""() => ({
+                available: window.Hunt.Native.available,
+                platform: window.Hunt.Native.platform,
+                about: (document.getElementById('appVersion') || {}).textContent || '',
+                sw: !!navigator.serviceWorker.controller
+            })""")
+            check("the native shell is detected", native["available"] is True, native)
+            check("the app says it is the iOS build", "iOS app" in native["about"], native["about"])
+            check("no service worker inside the native shell", native["sw"] is False, native)
+            check("no JS errors in the native shell", not errs_native, errs_native[:2])
+            ctx3.close()
+
             ctx2 = browser.new_context(viewport={"width": 390, "height": 844},
                                        device_scale_factor=2)
             ctx2.add_init_script("""window.__HUNTMAP_SERVER__ = {

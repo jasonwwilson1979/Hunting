@@ -26,3 +26,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Archive.zip
+
+# Capacitor / native shell
+node_modules/
+www/
+ios/
+android/
+.DS_Store

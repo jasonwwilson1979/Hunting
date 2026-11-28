@@ -25,7 +25,8 @@
     defaultView: false,     // true until the user (or a GPS fix) chooses a view
     calibS0: 0,             // overlay scale when the align sheet opened (slider base)
     wpSelectMode: false,    // Spots panel: tap rows to tick them, then delete in bulk
-    wpSelected: []          // ids ticked in that mode
+    wpSelected: [],         // ids ticked in that mode
+    zoneLog: []             // recent fence alerts, newest first
   };
 
   /* ------------------------------- boot ------------------------------- */
@@ -48,11 +49,13 @@
     'syncSection', 'syncCount', 'syncStatus', 'syncList', 'btnSyncRefresh', 'btnSyncAll',
     'syncSearch', 'syncState', 'syncCounty', 'syncUser', 'btnAccountSignIn', 'btnAccountSignOut',
     'accountState', 'accountNote', 'signServer', 'btnAccountCheck', 'accountDiag',
-    'btnAccountSync', 'accountAdminLink', 'btnAccountExport', 'btnAccountDelete', 'mapName', 'mapState', 'mapCounty', 'mapCity',
+    'btnAccountSync', 'accountAdminLink', 'btnAccountExport', 'btnAccountDelete', 'accountServerRow', 'accountServer',
+    'btnAccountServerSave', 'mapName', 'mapState', 'mapCounty', 'mapCity',
     'btnLayerUpload', 'metaDeviceNote', 'metaFoot', 'appVersion', 'btnAppUpdate',
     'btnWpSelect', 'wpSelectBar', 'wpSelectCount', 'btnWpSelectAll', 'btnWpSelectNone',
     'btnWpSelectDelete', 'providerNote', 'providerLicence', 'licenceList', 'btnOpenLicences',
-    'licencePageLink',
+    'licencePageLink', 'zoneList', 'zoneCount', 'zoneStatus',
+    'btnZoneAdd', 'btnOpenZones', 'setZoneSound', 'setZoneVibrate', 'setZoneShow',
     'mapUploadBox', 'mapUploadChk', 'mapUploadNote',
     'sheetMapMeta', 'metaSub', 'metaName', 'metaState', 'metaCounty', 'metaCity', 'metaPage',
     'metaNotes', 'btnMetaSave', 'btnMetaCancel',
@@ -125,6 +128,15 @@
         H.Sync.onMerged = onSpotsMerged;
         H.Sync.probe().then(function (ok) {
           if (ok && H.Sync.state.user) H.Sync.syncNow(true);
+        });
+      }
+      if (H.Zones) {
+        H.Zones.load().then(function () {
+          renderZones();
+          if (map) map.setZones(D.settings.zoneShow === false ? [] : H.Zones.list);
+          el.setZoneSound.checked = D.settings.zoneSound !== false;
+          el.setZoneVibrate.checked = D.settings.zoneVibrate !== false;
+          el.setZoneShow.checked = D.settings.zoneShow !== false;
         });
       }
     });
@@ -409,9 +421,17 @@
     el.btnAccountSignOut.hidden = !user;
     el.btnAccountExport.hidden = !user;
     el.btnAccountDelete.hidden = !user;
+    if (el.accountServerRow) {
+      const native = H.Sync && H.Sync.isNative && H.Sync.isNative();
+      el.accountServerRow.hidden = !native;
+      if (native && !el.accountServer.value) el.accountServer.value = H.Sync.serverUrl || '';
+    }
     el.accountNote.textContent = user
       ? 'Your uploads and your spots/tracks belong to this account: sign in on another phone or PC ' +
         'and they come along.'
+      : (H.Sync && H.Sync.isNative && H.Sync.isNative() && !H.Sync.serverUrl)
+        ? 'This app works offline with everything on the phone. Add your server address above to '
+          + 'sign in and sync spots, tracks and the map library between devices.'
       : hasServer
         ? 'Sign in to sync spots and tracks between devices and to keep your maps in your own ' +
           'library. Right now ' + D.waypoints.length + ' spot' + (D.waypoints.length === 1 ? '' : 's') +
@@ -692,6 +712,7 @@
     if (id === 'sheetSun') renderSun();
     if (id === 'sheetGps') renderGpsDetails();
     if (id === 'sheetTools') { refreshDiag(); renderAccount(); }
+    if (id === 'sheetZones') renderZones();
   }
   App.openSheet = openSheet;
 
@@ -823,6 +844,9 @@
       if (now - S.lastFixSave > 20000) {
         S.lastFixSave = now;
         DB.kvSet('lastpos', { lat: st.lat, lon: st.lon, t: now }).catch(function () {});
+      }
+      if (H.Zones && D.settings.zoneAlerts !== false) {
+        H.Zones.check(st.lat, st.lon).forEach(zoneAlert);
       }
       if (D.activeTrack && !GPS.isStale(25000)) {
         if (D.addTrackPoint(st.lat, st.lon, { accuracy: st.accuracy, altitude: st.altitude })) {
@@ -1033,8 +1057,9 @@
 
   function renderVersion() {
     if (!el.appVersion) return;
+    const native = H.Native && H.Native.describe ? H.Native.describe() : '';
     el.appVersion.textContent = 'HuntMap v' + VERSION.app +
-      (VERSION.date ? ' \u00b7 ' + VERSION.date : '');
+      (VERSION.date ? ' \u00b7 ' + VERSION.date : '') + (native ? ' \u00b7 ' + native : '');
   }
 
   /** Throw away the cached shell and take the newest files from the server. */
@@ -1054,6 +1079,152 @@
     }
     U.toast('Fetching the newest version\u2026', 'ok', 2500);
     Promise.all(jobs).then(done, done);
+  }
+
+  /* -------------------------------- geofences -------------------------------- */
+  let audioCtx = null;
+
+  /** Two short tones; iOS may block audio until the user has touched the app. */
+  function beep(freq, dur, when) {
+    try {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return;
+      if (!audioCtx) audioCtx = new Ctor();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(function () {});
+      const t0 = audioCtx.currentTime + (when || 0);
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    } catch (e) { /* autoplay policy, or no audio device */ }
+  }
+
+  /** Fire the announcement for a fence event: banner, sound, buzz, notification. */
+  function zoneAlert(ev) {
+    const z = ev.zone;
+    const inside = ev.type === 'enter';
+    const msg = (inside ? 'Entered ' : 'Left ') + (z.name || 'fence') +
+      ' \u00b7 ' + U.fmtDist(ev.distance);
+    U.toast(msg, inside ? 'ok' : '', 4200);
+    if (D.settings.zoneSound) {
+      if (inside) { beep(760, 0.12); beep(1040, 0.14, 0.15); }
+      else { beep(520, 0.16); beep(390, 0.2, 0.18); }
+    }
+    if (D.settings.zoneVibrate && navigator.vibrate) {
+      try { navigator.vibrate(inside ? [90, 70, 90] : [240]); } catch (e) { /* ignore */ }
+    }
+    if (H.Native && H.Native.notify) H.Native.notify('HuntMap fence', msg);
+    S.zoneLog.unshift({ at: Date.now(), type: ev.type, name: z.name, dist: ev.distance });
+    S.zoneLog = S.zoneLog.slice(0, 20);
+    if (S.sheet === 'sheetZones') renderZones();
+    if (map) map.invalidate();
+  }
+
+  function renderZones() {
+    if (!el.zoneList) return;
+    const rows = (H.Zones ? H.Zones.rows() : []);
+    if (el.zoneCount) el.zoneCount.textContent = rows.length ? '(' + rows.length + ')' : '';
+    el.zoneList.innerHTML = '';
+    if (!rows.length) {
+      el.zoneList.appendChild(U.el('div', { class: 'empty',
+        text: 'No fences yet. Move the map to the area you care about, tap + and set a radius.' }));
+    }
+    rows.forEach(function (row) {
+      const z = row.zone;
+      const item = U.el('div', { class: 'item item-split', 'data-zone': z.id });
+      const dot = U.el('span', { class: 'fence-mini', style: 'border-color:' + z.color });
+      item.appendChild(dot);
+      const main = U.el('div', { class: 'item-main' });
+      main.appendChild(U.el('div', { class: 'item-title', text: z.name }));
+      const bits = [U.fmtDist(z.radius) + ' radius',
+        row.inside === null ? 'waiting for a fix' : row.inside ? 'INSIDE' : 'outside',
+        z.onEnter ? 'enter' : '', z.onExit ? 'exit' : '', z.enabled ? '' : 'off'];
+      main.appendChild(U.el('div', { class: 'item-sub',
+        text: bits.filter(Boolean).join(' \u00b7 ') }));
+      item.appendChild(main);
+      const go = U.el('button', { class: 'mini-btn', type: 'button', text: 'Map' });
+      go.addEventListener('click', function () {
+        map.setView(z.lat, z.lon, Math.max(map.zoom, 15));
+        closeSheets();
+      });
+      const edit = U.el('button', { class: 'mini-btn', type: 'button', text: 'Edit' });
+      edit.addEventListener('click', function () { editZone(z); });
+      const del = U.el('button', { class: 'mini-btn', type: 'button', text: 'Delete' });
+      del.addEventListener('click', function () {
+        U.confirm('Delete "' + U.escapeHtml(z.name) + '"?',
+          'Its alerts stop immediately.', 'Delete').then(function (ok) {
+          if (!ok) return;
+          H.Zones.remove(z.id).then(function () {
+            renderZones();
+            if (map) map.invalidate();
+            U.toast('Fence deleted', 'ok');
+          });
+        });
+      });
+      item.appendChild(go);
+      item.appendChild(edit);
+      item.appendChild(del);
+      el.zoneList.appendChild(item);
+    });
+    if (el.zoneStatus) {
+      const live = rows.filter(function (r) { return r.watching; }).length;
+      el.zoneStatus.textContent = live
+        ? live + ' fence' + (live === 1 ? '' : 's') + ' watching \u00b7 last alert: ' +
+          (S.zoneLog[0] ? U.fmtAge(Date.now() - S.zoneLog[0].at) + ' ago' : 'none yet')
+        : 'No fence is being watched. Turn one on to get alerts.';
+    }
+    if (map && H.Zones) map.setZones(D.settings.zoneShow === false ? [] : H.Zones.list);
+  }
+
+  function addZone() {
+    if (!H.Zones) return;
+    const center = map.getCenterLatLon();
+    editZone(H.Zones.newZone({ lat: center.lat, lon: center.lon, radius: 150,
+      name: 'Fence ' + (H.Zones.list.length + 1) }), true);
+  }
+
+  /** One editor for new and existing fences (a modal keeps it to a few taps). */
+  function editZone(zone, isNew) {
+    const html =
+      '<label class="field"><span>Name</span><input type="text" id="zoneName" value="' +
+        U.escapeHtml(zone.name || '') + '"></label>' +
+      '<label class="field"><span>Radius (metres)</span>' +
+        '<input type="number" id="zoneRadius" min="' + H.Zones.MIN_R + '" max="' +
+        H.Zones.MAX_R + '" step="5" value="' + zone.radius + '"></label>' +
+      '<label class="switch-row"><span>Alert when entering</span>' +
+        '<input type="checkbox" id="zoneEnter"' + (zone.onEnter ? ' checked' : '') + '></label>' +
+      '<label class="switch-row"><span>Alert when leaving</span>' +
+        '<input type="checkbox" id="zoneExit"' + (zone.onExit ? ' checked' : '') + '></label>' +
+      '<label class="switch-row"><span>Watching</span>' +
+        '<input type="checkbox" id="zoneOn"' + (zone.enabled ? ' checked' : '') + '></label>';
+    U.modal({
+      title: isNew ? 'New fence' : 'Edit fence',
+      html: html,
+      okText: isNew ? 'Add fence' : 'Save',
+      onOk: function (body) {
+        const name = (body.querySelector('#zoneName').value || '').trim() || 'Fence';
+        const radius = U.clamp(parseInt(body.querySelector('#zoneRadius').value, 10) || 150,
+          H.Zones.MIN_R, H.Zones.MAX_R);
+        zone.name = name;
+        zone.radius = radius;
+        zone.onEnter = body.querySelector('#zoneEnter').checked;
+        zone.onExit = body.querySelector('#zoneExit').checked;
+        zone.enabled = body.querySelector('#zoneOn').checked;
+        H.Zones.resetState(zone.id);
+        H.Zones.save(zone).then(function () {
+          renderZones();
+          if (map) map.invalidate();
+          U.toast((isNew ? 'Fence added: ' : 'Saved: ') + name, 'ok');
+        });
+      }
+    });
   }
 
   /* ------------------------------- licences ------------------------------- */
@@ -2622,6 +2793,9 @@
 
   /* ----------------------------- service worker ----------------------------- */
   function registerServiceWorker() {
+    // The native shell ships the files inside the app; a service worker is neither
+    // needed nor supported on capacitor://, so skip it there.
+    if (H.Native && H.Native.available) return;
     if (!('serviceWorker' in navigator)) return;
     const host = location.hostname;
     if (!(location.protocol === 'https:' || host === 'localhost' || host === '127.0.0.1')) return;
@@ -2727,11 +2901,51 @@
     U.on(el.btnAccountSignIn, 'click', openSignInSheet);
     U.on(el.btnAccountCheck, 'click', checkServer);
     U.on(el.btnLayerUpload, 'click', uploadLayer);
+    U.on(el.btnOpenZones, 'click', function () {
+      if (!H.Zones) return;
+      renderZones();
+      openSheet('sheetZones');
+    });
+    U.on(el.btnZoneAdd, 'click', addZone);
+    U.on(el.setZoneSound, 'change', function () {
+      D.settings.zoneSound = el.setZoneSound.checked; D.saveSettings();
+    });
+    U.on(el.setZoneVibrate, 'change', function () {
+      D.settings.zoneVibrate = el.setZoneVibrate.checked; D.saveSettings();
+    });
+    U.on(el.setZoneShow, 'change', function () {
+      D.settings.zoneShow = el.setZoneShow.checked;
+      D.saveSettings();
+      if (map) { map.setZones(D.settings.zoneShow ? H.Zones.list : []); map.invalidate(); }
+    });
     U.on(el.btnAppUpdate, 'click', updateApp);
     U.on(el.btnAccountExport, 'click', function () {
-      // Straight to the server: the browser handles the JSON download, so it works
-      // even if this page is later updated.
-      window.open(H.Sync ? H.Sync.base + 'account/' : '/api/account/', '_blank', 'noopener');
+      if (!H.Sync) return;
+      if (!H.Sync.isNative()) {
+        // Web: the browser handles the JSON download (session cookie included).
+        window.open(H.Sync.base + 'account/', '_blank', 'noopener');
+        return;
+      }
+      // Native: the token has to travel in the request, so fetch it and show it.
+      H.Sync.exportAccount().then(function (json) {
+        const text = JSON.stringify(json, null, 2);
+        U.modal({ title: 'Your data', okText: 'Done', hideCancel: true,
+          html: '<p class="muted small">Everything the server holds for this account. ' +
+            'Select all and copy if you want to keep it.</p>' +
+            '<textarea readonly rows="12" id="exportJson">' + U.escapeHtml(text) + '</textarea>' });
+      }).catch(function (err) {
+        U.toast('Export failed: ' + ((err && err.message) || err), 'err', 4200);
+      });
+    });
+    U.on(el.btnAccountServerSave, 'click', function () {
+      if (!H.Sync) return;
+      const url = (el.accountServer.value || '').trim();
+      el.btnAccountServerSave.disabled = true;
+      H.Sync.setServerUrl(url).then(function () {
+        el.btnAccountServerSave.disabled = false;
+        renderAccount();
+        U.toast(url ? 'Server set — sign in to sync' : 'Server cleared (offline only)', 'ok', 3200);
+      });
     });
     U.on(el.btnAccountDelete, 'click', function () {
       if (!H.Sync || !H.Sync.state.user) return;
@@ -2740,12 +2954,7 @@
         'waypoints and tracks from the server. Spots on this phone stay until you delete them. ' +
         'This cannot be undone.', 'Delete account').then(function (ok) {
         if (!ok) return;
-        fetch((H.Sync.base || '/api/') + 'account/', {
-          method: 'DELETE', credentials: 'same-origin', cache: 'no-store'
-        }).then(function (res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          H.Sync.state.user = null;
-          H.Sync.state.maps = [];
+        H.Sync.deleteAccount().then(function () {
           renderAccount();
           renderSync();
           U.toast('Account deleted', 'ok', 3200);

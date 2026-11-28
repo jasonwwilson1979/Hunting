@@ -36,6 +36,7 @@
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4h5v2.5M6.5 6.5 7.5 21h9l1-14.5"/><path d="M10.5 10v7M13.5 10v7"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
 <symbol id="i-select" viewBox="0 0 24 24"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="3.2"/><path d="m8 12.3 2.9 2.9 5.4-6.2"/></symbol>
+<symbol id="i-fence" viewBox="0 0 24 24"><path d="M3.5 9.5h17M3.5 14.5h17M6.8 6v12M17.2 6v12"/><circle cx="12" cy="12" r="8.4" stroke-dasharray="2.6 3.4"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M4 4l16 16"/><path d="M9.9 5.9A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.2 8.1A17.6 17.6 0 0 0 2.5 12S6 18.5 12 18.5a9.7 9.7 0 0 0 4-.9"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/></symbol>
@@ -355,6 +356,12 @@
       </div>
       <p class="note small" id="accountNote">Local accounts on your own HuntMap server: sign in to
         keep your map library separate and to upload maps from this phone.</p>
+      <div class="row gap wrap" id="accountServerRow" hidden>
+        <label class="field grow"><span>Server address</span>
+          <input type="url" id="accountServer" placeholder="https://huntmap.example.com"
+                 autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+        <button class="btn" id="btnAccountServerSave" type="button">Save</button>
+      </div>
       <div class="row gap wrap">
         <button class="btn" id="btnAccountCheck" type="button">Check server</button>
         <button class="btn" id="btnAccountSync" type="button">Sync spots</button>
@@ -371,6 +378,7 @@
       <button class="tool-btn" id="btnOpenSun" type="button"><svg class="i"><use href="#i-sun"/></svg><span>Sun &amp; moon</span></button>
       <button class="tool-btn" id="btnOpenCompass" type="button"><svg class="i"><use href="#i-compass"/></svg><span>Compass</span></button>
       <button class="tool-btn" id="btnOpenTracks" type="button"><svg class="i"><use href="#i-track"/></svg><span>Tracks</span></button>
+      <button class="tool-btn" id="btnOpenZones" type="button"><svg class="i"><use href="#i-fence"/></svg><span>Fences</span></button>
       <button class="tool-btn" id="btnOpenGoTo" type="button"><svg class="i"><use href="#i-locate"/></svg><span>Go to coords</span></button>
       <button class="tool-btn" id="btnOpenGps" type="button"><svg class="i"><use href="#i-gps"/></svg><span>GPS info</span></button>
       <button class="tool-btn" id="btnOpenBackup" type="button"><svg class="i"><use href="#i-share"/></svg><span>Backup</span></button>
@@ -414,6 +422,26 @@
       and reloads the newest files from the server. Your spots, tracks and maps are kept.</p>
   </div>
 </section>
+<section class="sheet" id="sheetZones" aria-hidden="true">
+  <header class="sheet-head">
+    <h2>Fences <span class="count" id="zoneCount"></span></h2>
+    <div class="head-actions">
+      <button class="icon-btn" id="btnZoneAdd" type="button" title="Add a fence at the map centre"><svg class="i"><use href="#i-plus"/></svg></button>
+      <button class="icon-btn" data-close type="button"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+  </header>
+  <div class="sheet-body">
+    <p class="muted small">A fence is a circle on the ground. The app tells you when you walk
+      into it (or out of it) — useful for a bedding area, a property line or "don't cross the
+      swamp after dark". Fences live on this device and travel in your Backup file.</p>
+    <div class="list" id="zoneList"></div>
+    <div class="switch-row"><span>Sound on alerts</span><input type="checkbox" id="setZoneSound" checked></div>
+    <div class="switch-row"><span>Vibrate on alerts <em class="muted small">(phone)</em></span><input type="checkbox" id="setZoneVibrate" checked></div>
+    <div class="switch-row"><span>Show fences on the map</span><input type="checkbox" id="setZoneShow" checked></div>
+    <p class="note small" id="zoneStatus">Location must be on for fences to fire.</p>
+  </div>
+</section>
+
 <section class="sheet" id="sheetLicences" aria-hidden="true">
   <header class="sheet-head">
     <h2>Map sources &amp; licences</h2>
@@ -679,6 +707,8 @@
 <script src="js/map.js"></script>
 <script src="js/gps.js"></script>
 <script src="js/data.js"></script>
+<script src="js/zones.js"></script>
+<script src="js/native.js"></script>
 <script src="js/pdfmap.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/app.js"></script>

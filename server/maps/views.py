@@ -2,6 +2,7 @@
 import json
 import math
 import mimetypes
+import secrets
 import time
 from pathlib import Path
 
@@ -703,6 +704,62 @@ def api_account(request):
     logout(request)
     user.delete()
     return JsonResponse({"deleted": True, "user": username})
+
+
+@csrf_exempt
+@require_http_methods(["POST", "DELETE"])
+def api_token(request):
+    """Device tokens for the native app.
+
+    POST  {"username", "password", "label"} -> {"token": "...", "expires_at": ...}
+          The plaintext token is returned once and never stored.
+    DELETE  (with `Authorization: Bearer ...`) revokes the calling token - that is
+          how the app signs out on one phone without touching the others.
+    """
+    from datetime import timedelta
+    from django.contrib.auth import authenticate
+    from django.utils import timezone
+    from .models import ApiToken
+    from huntmap_server.native import token_hash
+
+    if request.method == "DELETE":
+        token = getattr(request, "_huntmap_token", None)
+        if not request.user.is_authenticated or not token:
+            return JsonResponse({"error": "Send a bearer token to revoke",
+                                 "code": "auth-required"}, status=401)
+        token.delete()
+        return JsonResponse({"revoked": True})
+
+    try:
+        payload = json.loads((request.body or b"{}").decode("utf-8") or "{}")
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({"error": "Body must be JSON"}, status=400)
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "")
+    label = str(payload.get("label") or "").strip()[:60]
+    if not username or not password:
+        return JsonResponse({"error": "User name and password are required"}, status=400)
+
+    user = authenticate(request, username=username, password=password)
+    if user is None:
+        # Same message for unknown user and wrong password, like the web login.
+        return JsonResponse({"error": "Wrong user name or password",
+                             "code": "bad-credentials"}, status=401)
+    if not user.is_active:
+        return JsonResponse({"error": "This account is disabled", "code": "inactive"}, status=403)
+
+    raw = secrets.token_urlsafe(32)
+    days = int(getattr(settings, "HUNTMAP_TOKEN_DAYS", 365) or 0)
+    expires = timezone.now() + timedelta(days=days) if days > 0 else None
+    ApiToken.objects.create(owner=user, prefix=raw[:10], key_hash=token_hash(raw),
+                            label=label or "Mobile app", expires_at=expires)
+    return JsonResponse({
+        "token": raw,
+        "prefix": raw[:10],
+        "user": user.username,
+        "expires_at": expires.isoformat() if expires else None,
+        "token_type": "Bearer",
+    }, status=201)
 
 
 @require_GET

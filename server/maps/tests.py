@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
-from .models import MapDocument
+from .models import ApiToken, MapDocument
 
 SAMPLE = Path(__file__).resolve().parents[2] / "tests" / "sample-topo-map.pdf"
 MEDIA_TMP = tempfile.mkdtemp(prefix="huntmap-test-media-")
@@ -287,6 +287,93 @@ class MapLibraryTests(TestCase):
     def test_account_endpoints_need_a_session(self):
         self.assertEqual(self.client.get("/api/account/").status_code, 401)
         self.assertEqual(self.client.delete("/api/account/").status_code, 401)
+
+    # ------------------------------------------------- native tokens / CORS
+    def _token(self, username="tester", password="huntmap-pass"):
+        response = self.client.post("/api/token/", json.dumps(
+            {"username": username, "password": password, "label": "iPhone"}),
+            content_type="application/json", HTTP_ORIGIN="capacitor://localhost")
+        return response
+
+    def test_a_device_can_get_a_bearer_token(self):
+        response = self._token()
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertTrue(body["token"])
+        self.assertEqual(body["user"], "tester")
+        self.assertEqual(body["token_type"], "Bearer")
+        self.assertEqual(body["prefix"], body["token"][:10])
+        # the database keeps only a hash
+        token = ApiToken.objects.get()
+        self.assertNotEqual(token.key_hash, body["token"])
+        self.assertEqual(token.owner.username, "tester")
+
+    def test_a_token_authenticates_api_calls_without_a_cookie(self):
+        raw = self._token().json()["token"]
+        bearer = {"HTTP_AUTHORIZATION": "Bearer " + raw}
+        anon = Client()
+        me = anon.get("/api/me/", **bearer)
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["user"], "tester")
+        # and it can write
+        sync = anon.post("/api/sync/", json.dumps({"spots": [self._spot("wp_tok", "Token spot")]}),
+                         content_type="application/json", **bearer)
+        self.assertEqual(sync.status_code, 200)
+        self.assertEqual([s["name"] for s in sync.json()["spots"]], ["Token spot"])
+
+    def test_a_bad_or_revoked_token_is_not_a_login(self):
+        self.assertEqual(Client().get("/api/me/", HTTP_AUTHORIZATION="Bearer " + "x" * 40)
+                         .json()["user"], None)
+        raw = self._token().json()["token"]
+        bearer = {"HTTP_AUTHORIZATION": "Bearer " + raw}
+        client = Client()
+        self.assertEqual(client.get("/api/me/", **bearer).json()["user"], "tester")
+        self.assertEqual(client.delete("/api/token/", **bearer).json()["revoked"], True)
+        self.assertIsNone(client.get("/api/me/", **bearer).json()["user"])
+
+    def test_expired_tokens_are_refused(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        raw = self._token().json()["token"]
+        ApiToken.objects.update(expires_at=timezone.now() - timedelta(days=1))
+        self.assertIsNone(Client().get("/api/me/", HTTP_AUTHORIZATION="Bearer " + raw)
+                          .json()["user"])
+
+    def test_tokens_do_not_open_the_admin(self):
+        self.staff.is_staff = True
+        self.staff.is_superuser = True
+        self.staff.save()
+        raw = self._token("tester", "huntmap-pass").json()["token"]
+        page = Client().get("/admin/", HTTP_AUTHORIZATION="Bearer " + raw)
+        self.assertEqual(page.status_code, 302)     # bounced to the admin login
+
+    def test_wrong_password_gets_no_token(self):
+        response = self._token(password="nope-nope-nope")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "bad-credentials")
+        self.assertFalse(ApiToken.objects.exists())
+
+    def test_native_origins_get_cors_and_others_do_not(self):
+        pre = self.client.options("/api/sync/",
+                                  HTTP_ORIGIN="capacitor://localhost",
+                                  HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+                                  HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization,content-type")
+        self.assertEqual(pre.status_code, 204)
+        self.assertEqual(pre["Access-Control-Allow-Origin"], "capacitor://localhost")
+        self.assertIn("Authorization", pre["Access-Control-Allow-Headers"])
+        self.assertIn("POST", pre["Access-Control-Allow-Methods"])
+
+        android = self.client.options("/api/me/", HTTP_ORIGIN="https://localhost")
+        self.assertEqual(android["Access-Control-Allow-Origin"], "https://localhost")
+
+        evil = self.client.options("/api/me/", HTTP_ORIGIN="https://evil.example")
+        self.assertNotIn("Access-Control-Allow-Origin", evil)
+        plain = self.client.get("/api/me/", HTTP_ORIGIN="https://evil.example")
+        self.assertNotIn("Access-Control-Allow-Origin", plain)
+
+    def test_cors_is_only_for_the_api(self):
+        page = self.client.get("/", HTTP_ORIGIN="capacitor://localhost")
+        self.assertNotIn("Access-Control-Allow-Origin", page)
 
     # ------------------------------------------------- self-hosted tiles / licences
     def _png(self):

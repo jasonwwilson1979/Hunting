@@ -13,6 +13,7 @@ urlpatterns = [
     path("diag/", views.api_diag, name="api-diag"),
     path("sync/", views.api_sync, name="api-sync"),
     path("meta/", views.api_meta, name="api-meta"),
+    path("token/", views.api_token, name="api-token"),
     path("login/", views.api_login, name="api-login"),
     path("logout/", views.api_logout, name="api-logout"),
     path("register/", views.api_register, name="api-register"),

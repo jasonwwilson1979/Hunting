@@ -168,6 +168,7 @@
     if (this.showGrid) this.drawGrid();
     this.drawTracks();
     this.drawMeasure();
+    this.drawZones();
     this.drawWaypoints();
     this.drawTarget();
     this.drawPosition();
@@ -429,14 +430,61 @@
 
   P.setWaypoints = function (list) { this.waypoints = list || []; this.invalidate(); };
 
+  /* -------------------------------- geofences -------------------------------- */
+  P.setZones = function (list) { this.zones = list || []; this.invalidate(); };
+
+  /** Fence circles: a soft fill, a dashed edge and the name at the top. */
+  P.drawZones = function () {
+    if (!this.zones || !this.zones.length) return;
+    const ctx = this.ctx;
+    const self = this;
+    this.zones.forEach(function (z) {
+      if (!z.enabled) return;
+      const c = self.latLonToScreen(z.lat, z.lon);
+      // radius in pixels: convert metres to degrees of longitude at this latitude
+      const dLon = z.radius / (111320 * Math.max(0.15, Math.cos(z.lat * Math.PI / 180)));
+      const edge = self.latLonToScreen(z.lat, z.lon + dLon);
+      const r = Math.abs(edge.x - c.x);
+      if (!isFinite(r) || r < 3) return;
+      if (c.x + r < -30 || c.x - r > self.width + 30 ||
+          c.y + r < -30 || c.y - r > self.height + 30) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = z.color || '#e2513f';
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([9, 7]);
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = z.color || '#e2513f';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      if (self.showLabels && z.name) {
+        ctx.font = '700 11px -apple-system, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(0,0,0,.8)';
+        ctx.fillStyle = z.color || '#e2513f';
+        const labelY = Math.max(14, c.y - r - 3);
+        ctx.strokeText(z.name, c.x, labelY);
+        ctx.fillText(z.name, c.x, labelY);
+      }
+      ctx.restore();
+    });
+  };
+
   /**
    * A shaped marker: the type's silhouette standing on a short stem, with the
-   * exact spot marked by a small dot. No circle - the shape *is* the pin.
+   * exact spot marked by a dot. No circle - the shape *is* the pin. Sized for a
+   * phone at arm's length in the woods, not for a desktop.
    */
   P.drawPin = function (x, y, color, code, selected, type) {
     const ctx = this.ctx;
-    const size = selected ? 40 : 33;
-    const stem = selected ? 9 : 8;
+    const size = selected ? 58 : 46;
+    const stem = selected ? 12 : 10;
     const bottom = y - stem;          // silhouette sits on the stem
     ctx.save();
 
@@ -451,11 +499,11 @@
 
     // the exact coordinate
     ctx.beginPath();
-    ctx.arc(x, y, 3.4, 0, Math.PI * 2);
+    ctx.arc(x, y, selected ? 4.6 : 4, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.95)';
-    ctx.lineWidth = 1.7;
+    ctx.lineWidth = selected ? 2 : 1.8;
     ctx.stroke();
 
     if (selected) {
@@ -488,30 +536,30 @@
     const self = this;
     this.waypoints.forEach(function (w) {
       const p = self.latLonToScreen(w.lat, w.lon);
-      if (p.x < -70 || p.x > self.width + 70 || p.y < -90 || p.y > self.height + 70) return;
+      if (p.x < -80 || p.x > self.width + 80 || p.y < -120 || p.y > self.height + 80) return;
       const info = typeInfo(w);
       self.drawPin(p.x, p.y, info.color, info.code, self.selectedId === w.id, w.type);
       if (self.showLabels && w.name) {
         ctx.save();
-        ctx.font = '600 11px -apple-system, system-ui, sans-serif';
+        ctx.font = '700 12px -apple-system, system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(0,0,0,.72)';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(0,0,0,.78)';
         ctx.fillStyle = U.cssVar('--map-text', '#e9e4d4');
-        ctx.strokeText(w.name, p.x, p.y + 4);
-        ctx.fillText(w.name, p.x, p.y + 4);
+        ctx.strokeText(w.name, p.x, p.y + 6);
+        ctx.fillText(w.name, p.x, p.y + 6);
         ctx.restore();
       }
     });
   };
 
   P.hitTest = function (sx, sy) {
-    let best = null, bestD = 30;
+    let best = null, bestD = 34;
     for (let i = 0; i < this.waypoints.length; i++) {
       const w = this.waypoints[i];
       const p = this.latLonToScreen(w.lat, w.lon);
-      const cy = p.y - 22;          // centre of the silhouette above the anchor
+      const cy = p.y - 30;          // centre of the silhouette above the anchor
       const d = Math.hypot(p.x - sx, cy - sy);
       if (d < bestD) { bestD = d; best = w; }
     }

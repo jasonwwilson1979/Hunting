@@ -53,6 +53,9 @@ services:
       HUNTMAP_TILE_ATTRIBUTION: "${HUNTMAP_TILE_ATTRIBUTION:-}"
       # 1 = only licence-safe base maps (your tiles + USGS); needed before you charge.
       HUNTMAP_COMMERCIAL: "${HUNTMAP_COMMERCIAL:-0}"
+      # Native app tokens: origins allowed to call /api/ cross-origin.
+      HUNTMAP_NATIVE_ORIGINS: "${HUNTMAP_NATIVE_ORIGINS:-capacitor://localhost,ionic://localhost,https://localhost,http://localhost}"
+      HUNTMAP_TOKEN_DAYS: "${HUNTMAP_TOKEN_DAYS:-365}"
     volumes:
       # database, uploaded maps and the TLS certificate live here
       - huntmap-data:/data

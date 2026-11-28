@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 ALLOWED_EXTS = {".pdf", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".webp"}
 KIND_BY_EXT = {".pdf": "pdf", ".tif": "tiff", ".tiff": "tiff"}
@@ -74,6 +75,36 @@ class SyncedTrack(models.Model):
 
     def __str__(self):
         return self.name or self.remote_id
+
+
+class ApiToken(models.Model):
+    """A long-lived token for a phone/tablet app.
+
+    The web app uses a session cookie, which a native shell cannot share (it is a
+    different origin: capacitor://localhost). A bearer token lets the iOS/Android
+    build keep its bundled offline files *and* talk to this server.
+
+    Only the SHA-256 of the key is stored, so a database copy cannot be replayed.
+    """
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                              related_name="huntmap_tokens")
+    prefix = models.CharField(max_length=12, db_index=True, help_text="First characters, for the UI")
+    key_hash = models.CharField(max_length=64, unique=True)
+    label = models.CharField(max_length=60, blank=True, help_text="e.g. iPhone 15")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.label or self.prefix, self.owner)
+
+    def is_valid(self, now=None):
+        now = now or timezone.now()
+        return self.expires_at is None or self.expires_at > now
 
 
 class MapDocument(models.Model):

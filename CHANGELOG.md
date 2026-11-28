@@ -10,6 +10,91 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions
 [SemVer](https://semver.org/): `MAJOR` = data/API breaks, `MINOR` = new features,
 `PATCH` = fixes.
 
+## [1.14.0] — 2026-11-27
+
+### Added
+- **The native app is offline *and* synced.** The Capacitor shell is a different origin
+  (`capacitor://localhost` / `https://localhost`), so it cannot use the web session
+  cookie. It now signs in with a **bearer token** instead:
+  - `POST /api/token/` (user name + password + device label) issues a 43-character
+    token, returned once; only its SHA-256 is stored (`ApiToken`, migration 0004).
+  - `Authorization: Bearer …` authenticates every `/api/` call — maps, files,
+    calibration, sync, `diag`, `account` — for anyone, with no cookie.
+  - `DELETE /api/token/` revokes just that device; *Sign out* in the app does this.
+  - Tokens expire after `HUNTMAP_TOKEN_DAYS` (default 365, `0` = never) and can be
+    seen/revoked in the Django admin (read-only: they are never created by hand).
+- **CORS limited to the native origins**: `huntmap_server/native.py` answers preflights
+  for `/api/` only, for the origins in `HUNTMAP_NATIVE_ORIGINS` (default
+  `capacitor://localhost`, `ionic://localhost`, `https://localhost`,
+  `http://localhost`), echoes the exact origin, allows `Authorization`, and grants
+  nothing to other websites. A token is never accepted on `/admin/`.
+- **Server address in the app**: *Tools → Account → Server address* (native only) saves
+  `https://your.host`, after which sign-in, the map library, spot/track sync, map-file
+  downloads and **Export my data** all run over the token. With no address the app is a
+  pure offline app, and says so.
+- Android works with the same code: `capacitor.config.json` uses
+  `androidScheme: "https"`, whose origin (`https://localhost`) is in the default list.
+
+### Changed
+- `js/sync.js` now keeps its base URL and token in IndexedDB, sends the token on every
+  request and on file downloads (`SY.authFetch`), and revokes it on sign-out.
+- Export/delete in the native app go through the token (the web keeps its
+  browser-download and session behaviour).
+
+### Tests
+- Server (57, up from 49): token issue, bearer auth without a cookie, wrong password,
+  revocation, expiry, tokens not opening `/admin/`, preflight allowed for the native
+  origins, no grant for other origins, CORS absent outside `/api/`.
+- `tests/e2e_django.py` (47, up from 39): the real app in the browser pretending to be
+  the shell — wrong password refused, token issued, `/api/me/` and a map file fetched
+  with it, export works, sign-out revokes + forgets the token, and the CORS preflight
+  grant is visible to the browser while another origin gets none.
+
+## [1.13.0] — 2026-11-27
+
+### Added
+- **Geofences ("Fences").** Draw a circle on the ground, get told when you walk into
+  it or out of it. *Tools → Fences → +* takes the map centre; the editor sets name,
+  radius (15 m – 5 km), "alert when entering", "alert when leaving" and whether it is
+  watching. Fences are drawn as a dashed circle with their name, listed with their
+  live state (`INSIDE` / `outside`), and alerted with a banner, two tones (rising in,
+  falling out), a vibration pattern and — in the native shell — a local notification.
+  Alerts have hysteresis (12 m of slack) so a wobbling fix does not flap, adopt the
+  state silently on the first fix, and respect a 20 s cooldown. Stored in IndexedDB
+  (new `zones` store, DB v2 with a non-destructive upgrade) and included in
+  Backup / Restore.
+- **Capacitor shell for iPhone/iPad (and Android).** `package.json`,
+  `capacitor.config.json` and `scripts/build-native.sh` (copies the runtime into
+  `www/`, 2.2 MB, verified) plus `docs/ios-app.md`: exact commands, the Info.plist
+  location strings, the privacy manifest keys App Store uploads now require, and the
+  App Store notes (4.2 "minimum functionality", 5.1.1 location claims, in-app purchase
+  vs. selling on your website). `js/native.js` bridges local notifications, exposes the
+  shell in *Tools → About* ("iOS app · offline") and the app **skips the service
+  worker** there, since the files ship inside the app.
+
+### Changed
+- **Markers are much bigger and more detailed**: map pins 46 px (58 px selected,
+  up from 33/40), spot labels 12 px bold, list icons 36 px, and the silhouettes gained
+  the detail that reads at that size — a deer eye, ear and hock marks, bear inner ears
+  and claws, a turkey wing and beard, a trail-cam lens ring and IR dots, a treestand
+  tree trunk, two blind windows with brush, cabin window mullions.
+- Fence alerts are on by default; sound, vibration and "show fences" can be turned off
+  in the Fences panel.
+
+### Notes
+- iOS/Android builds need macOS + Xcode (or Android Studio); they cannot be produced or
+  tested on the Linux box this repo was written on. The scaffolding and the copy step
+  are verified, the first Xcode build is a device test.
+- In the native shell the server features (accounts, library, sync) are web-only for
+  now: they rely on a same-origin session cookie, and `capacitor://localhost` is a
+  different origin. `docs/ios-app.md` gives both workarounds (load the server URL, or
+  add token auth — the natural next step).
+
+### Tests
+- `tests/e2e.py` (119 checks): fence state adoption, edge slack, enter/exit, cooldown,
+  disabled fences, add-a-fence-through-the-panel (stored, drawn, listed, deleted), and
+  the native shell being detected with no service worker and no JS errors.
+
 ## [1.12.0] — 2026-11-27
 
 ### Added

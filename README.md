@@ -20,6 +20,11 @@ devices:
   sign, kill site, camp, vehicle, hazard) with notes, bearings and distances — each one drawn as
   **its own silhouette** (a deer with antlers, a bear, a fanned turkey, a stand with a ladder …)
   on the map, in the list and on the spot sheet. Tick several in the list to delete them together.
+- **Fences (geofences)**: draw a circle on the ground and get told — banner, tones, vibration,
+  notification — when you walk into it or out of it. Radius from 15 m to 5 km, per-fence
+  enter/exit switches, and they travel in your backup.
+- **Runs as an iPhone/iPad app**: a Capacitor shell (`docs/ios-app.md`) that ships the files
+  inside the app, so it opens with no signal and no server; Android uses the same scaffolding.
 - **Track recording** with distance, time, elevation gain and GPX export.
 - **Sun & moon**: sunrise, sunset, civil twilight, legal-light window, moon phase, % lit.
 - **Compass**, **distance measuring**, **go to coordinates**, UTM / DMS / decimal formats.
@@ -75,6 +80,27 @@ speaks HTTPS so the phone gets a secure context (GPS + offline). Accept the cert
 4. Tap the crosshair button and allow location.
 
 The phone must be on the same Wi-Fi as the computer while the server runs.
+
+### As an iPhone / iPad app (Capacitor)
+
+The web app also runs as a native shell: the files ship **inside** the app, so it
+opens with no signal, no server and no browser cache, and fence alerts arrive as local
+notifications. That is the right way to use it where there is no Wi-Fi at all.
+
+```bash
+npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/ios@latest \
+            @capacitor/geolocation@latest @capacitor/local-notifications@latest
+npm run native:www      # bundle the app into www/ (2.2 MB, no server/tests/docs)
+npx cap add ios && npx cap open ios     # needs macOS + Xcode
+```
+
+`docs/ios-app.md` has the full walkthrough: Info.plist location strings, the privacy
+manifest Apple now requires, TestFlight/App Store notes (guideline 4.2, in-app
+purchase), and the two ways to keep the account/library sync (server URL, or token
+auth — the sync is cookie-based today, so it is web-only in the shell for now).
+
+> Built and verified on Linux up to `npm run native:www`; the Xcode build itself needs
+> a Mac, so treat the first device run as a test.
 
 ### Docker / Portainer
 
@@ -173,6 +199,8 @@ draw and the GPS dot moves (the first fix can take 30–120 s without network as
 | `HUNTMAP_TILE_ATTRIBUTION` | credit drawn on the map (default “© OpenStreetMap contributors”) |
 | `HUNTMAP_ATTRIBUTION_URL` | where that credit links (default `openstreetmap.org/copyright`) |
 | `HUNTMAP_COMMERCIAL=1` | paid-site mode: only licence-safe base maps are offered |
+| `HUNTMAP_NATIVE_ORIGINS` | origins allowed to call `/api/` from the iOS/Android shell (default `capacitor://localhost,ionic://localhost,https://localhost,http://localhost`) |
+| `HUNTMAP_TOKEN_DAYS` | how long a device token lasts (default `365`, `0` = never) |
 
 API: `GET /api/maps/` (library; add `?q=`, `?state=`, `?county=`), `POST /api/maps/` (multipart
 `file`, `name`, `page`, `state`, `county`, `city`), `GET /api/maps/<id>/`, `PATCH /api/maps/<id>/`
@@ -180,7 +208,7 @@ API: `GET /api/maps/` (library; add `?q=`, `?state=`, `?county=`), `POST /api/ma
 `GET|POST /api/sync/` (your spots and tracks — `POST` sends the device's set and returns the merged
 one, needs a signed-in session), `GET /api/meta/` (tile source + licence), `GET /api/account/`
 (export your data) / `DELETE /api/account/` (erase it), `GET /tiles/<z>/<x>/<y>.png`,
-`GET /licences/`, plus `GET /api/me/`, `POST /api/login/`, `POST /api/logout/`, `POST /api/register/`.
+`GET /licences/`, `POST|DELETE /api/token/` (native app: issue / revoke a bearer token), plus `GET /api/me/`, `POST /api/login/`, `POST /api/logout/`, `POST /api/register/`.
 
 The app is served from the same origin, so there is no CORS. Read endpoints are open to your
 LAN — fine at home, not for the public internet; set `HUNTMAP_TOKEN` if you want writes
@@ -373,6 +401,9 @@ device you sign into.
   resurrected by the next pull).
 - Offline is unaffected: everything stays in the phone's database and the queue is flushed the next
   time you are online and signed in. Nothing is sent when you are signed out.
+
+In the native app (see **As an iPhone / iPad app**) the same sync runs over a bearer token
+instead of the cookie, so the phone keeps its offline files and still syncs.
 
 The server stores them in `SyncedSpot` / `SyncedTrack` (Django admin → *Maps* → those two models);
 `/api/sync/` is `GET` (list) and `POST` (push the local set, receive the merged set) and requires a
@@ -666,6 +697,22 @@ Tap rows to tick them (*All* takes everything the current search shows), then **
 confirm once. Bulk deletes are queued for the server together, so they stay deleted on your other
 devices too.
 
+**Fences (geofences).** *Tools → Fences → +* puts a circle at the centre of the map. In the
+editor set the name, the **radius** (15 m – 5 km) and whether it should alert when you **enter**,
+when you **leave**, or both; the switch turns it on and off. The panel lists every fence with its
+live state (`INSIDE` / `outside` / `waiting for a fix`) and a **Map** button to jump to it, and the
+circle is drawn on the map with its name on the edge.
+
+When a fence fires you get a banner (`Entered Sanctuary · 210 ft`), two rising tones on the way in
+and two falling tones on the way out, a vibration pattern, and — in the iOS/Android app — a local
+notification, so it works with the phone in your pocket. Sound, vibration and "show fences on the
+map" are switches in the same panel.
+
+The detection is built to be quiet: it takes the inside/outside state from your first fix instead
+of firing an alert on every launch, it uses 12 m of slack at the edge so a wobbling fix does not
+flap in and out, and the same fence cannot fire twice within 20 s. Fences live on the device
+(IndexedDB, like your maps) and are included in **Backup**.
+
 Other gestures:
 
 - **Tap the map** → coordinates under your finger appear in the top chip; tapping a pin
@@ -687,6 +734,10 @@ Other gestures:
 ![Deer, bear, turkey, stand, blind, cabin, camp, water, hazard and kill site as shaped markers](tests/screenshots/11-shaped-pins.png)
 
 ![Tick several spots in the list and delete them together](tests/screenshots/12-select-spots.png)
+
+![Fences: dashed circles on the map and the panel that watches them](tests/screenshots/13-fences.png)
+
+![The bigger, more detailed markers](tests/screenshots/14-big-pins.png)
 
 ---
 
@@ -883,6 +934,10 @@ maps** (unlimited, precise, no policy issues) — that is why the PDF workflow e
 index.html                 app shell, panels, icon sprite
 manifest.webmanifest       PWA metadata (name, icons, standalone)
 sw.js                      service worker: app-shell offline cache
+package.json               Capacitor scripts (native:www, native:sync, native:open:*)
+capacitor.config.json      app id, webDir=www, iOS/Android shell settings
+scripts/build-native.sh    bundles the runtime into www/ for the native shell
+docs/ios-app.md            Xcode/App Store walkthrough for the iPhone app
 CHANGELOG.md               release notes, one section per version
 LEGAL.md                   checklist for charging money (ToS, privacy, refunds, attribution)
 docs/                      terms-of-service.md and privacy-policy.md templates
@@ -898,8 +953,10 @@ js/tiles.js                tile providers, Cache-API tile store, area downloader
 js/map.js                  canvas map renderer, gestures, overlays, tracks, pins
 js/gps.js                  geolocation watch, smoothing, compass, wake lock
 js/data.js                 spots, tracks, layers, GPX, backup/restore
+js/zones.js                geofences: circles, enter/exit detection, hysteresis
 js/pdfmap.js               pdf.js/TIFF rendering, image rotation, calibration math
 js/sync.js                 optional bridge to the Django server (PC map library)
+js/native.js               Capacitor bridge: local notifications, native detection
 js/app.js                  all UI wiring
 vendor/pdfjs/              pdf.js 3.11.174 (legacy UMD build, Apache-2.0)
 vendor/utif/               UTIF 3.1.0 TIFF decoder (MIT)
@@ -942,13 +999,13 @@ python3 tests/check_compose.py  # compose port/env resolution, no containers sta
 cd server && python3 manage.py test maps    # server/API unit tests
 ```
 
-`tests/e2e.py` (105 checks): load without errors, the version in *Tools → About* matching
+`tests/e2e.py` (119 checks): load without errors, the version in *Tools → About* matching
 `js/version.js` with the service-worker cache named after it, **every spot type having a silhouette
 that rasterises for the canvas** (the deer marker carrying its white halo), **select-mode bulk delete**
 (tick two of three, confirm, both gone from memory and IndexedDB, mode ends), **self-hosted tiles in
 commercial mode** (paid mode picked up, community/Esri sources hidden, your tiles the default, tiles
 fetched from `/tiles/…`, the credit being a link to the OSM copyright page, the Licences sheet listing
-what is withheld, a stored forbidden base map replaced on load), GPS fix (two-phase: a quick network/Wi-Fi request
+what is withheld, a stored forbidden base map replaced on load), **geofences** (state adopted on the first fix, edge slack, enter/exit, cooldown, disabled fences, add/edit/delete through the panel), **the native shell** (detected, labelled in About, no service worker, no JS errors), GPS fix (two-phase: a quick network/Wi-Fi request
 then a high-accuracy watch, source recorded, watchdog armed, and the **Fast Wi-Fi fix** button
 switching the watch to network mode), HUD coordinates/UTM, base map default and
 tile loading, tile-policy handling (Referer, OSM throttling/600-tile cap, an HTML "Access blocked"
@@ -963,7 +1020,7 @@ moving, GPX round-trip, reload persistence, service worker, a full **offline rel
 map loaded through the UI, rotated 90°, georeferenced with a 5° fine rotation, and the align-bar
 sliders.
 
-`tests/e2e_django.py` (39 checks): Django serves the app, the PC library is listed with its place,
+`tests/e2e_django.py` (47 checks): Django serves the app, the PC library is listed with its place,
 **search / state filters**, **editing a map's details on the server**, the **Tools → Account** card
 (create account, shows the user, sign out), **Sync spots visible while signed out**, the app version
 in *Tools → About*, the `/library/` page and its state filter, PDF + TIFF
@@ -974,9 +1031,12 @@ georeference, a **map uploaded by one signed-in device shows up on another**, an
 a waypoint made on the first device is synced to the account (`/api/sync/`) and is there after the
 second device signs in, **deleting it sticks** (gone locally, gone on the server, gone on the other
 device before it syncs again). Also checks that the add-map form and the per-map **Edit** sheet both
-carry name / state / county / city.
+carry name / state / county / city, then the **native app path**: a wrong password is
+refused, signing in issues a bearer token, that token fetches `/api/me/` and a map file
+without any cookie, the data export works over it, sign-out revokes it and forgets it, and
+the CORS preflight for `capacitor://localhost` is granted while another origin gets none.
 
-`server/maps/tests.py` (49 tests): app files served and private files hidden, health endpoint
+`server/maps/tests.py` (57 tests): app files served and private files hidden, health endpoint
 (including loopback probes with a pinned host name), upload/list/download, MIME types, sha256,
 calibration validation, token protection, login requirement, the upload form, `addmap` idempotency
 and `--state/--county/--city`, place filters + the `/library/` page and edit form, metadata editing
@@ -987,7 +1047,9 @@ ignored for the internet), ownership scoping, `HUNTMAP_REQUIRE_AUTH`, **spot/tra
 clock, unknown-id tombstones, a second device receiving the same account's spots, accounts kept
 apart), **self-hosted tiles** (folder, `404` on a miss, MBTiles with the TMS row flip, week-long
 cache header, `/api/meta/` with and without tiles, the injected app config), the **licences page**,
-and **account export / erasure**.
+**account export / erasure**, and **native tokens**: issue, bearer auth without a cookie,
+wrong password, revocation, expiry, tokens not opening `/admin/`, CORS granted for the
+native origins and refused for others (and nowhere outside `/api/`).
 
 `tests/e2e_docker.sh` (32 checks, three container modes): builds the image, starts the HTTPS
 container, waits for Docker's healthcheck, verifies the app shell + `/api/health/` + static assets,

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MapDocument, SyncedSpot, SyncedTrack
+from .models import ApiToken, MapDocument, SyncedSpot, SyncedTrack
 
 
 @admin.register(MapDocument)
@@ -54,3 +54,15 @@ class SyncedTrackAdmin(admin.ModelAdmin):
     @admin.display(description="Points")
     def point_count(self, obj):
         return len(obj.points or [])
+
+
+@admin.register(ApiToken)
+class ApiTokenAdmin(admin.ModelAdmin):
+    list_display = ("label", "prefix", "owner", "created_at", "last_used_at", "expires_at")
+    list_filter = ("owner",)
+    search_fields = ("label", "prefix", "owner__username")
+    readonly_fields = ("prefix", "key_hash", "created_at", "last_used_at")
+
+    def has_add_permission(self, request):
+        # Tokens are only issued through /api/token/ (the plaintext is never stored).
+        return False

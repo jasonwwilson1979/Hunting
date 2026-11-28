@@ -27,3 +27,12 @@ venv
 
 # dev extras
 tests
+
+# native shell (Capacitor) - not part of the server image
+node_modules
+www
+ios
+android
+package.json
+capacitor.config.json
+scripts

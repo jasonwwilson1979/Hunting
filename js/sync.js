@@ -46,12 +46,92 @@
     });
   }
 
+  /* -------- where the server is, and how we prove who we are (web vs app) --------
+     Web: same origin, session cookie, SY.base = 'api/'.
+     Native (Capacitor): the app is served from capacitor://localhost, so the API is
+     a different origin. The user enters the server address once; requests carry
+     'Authorization: Bearer <token>' and no cookies. */
+  SY.isNative = function () { return !!(H.Native && H.Native.available); };
+  SY.token = null;
+  SY.serverUrl = '';
+  let configLoaded = null;
+
+  function normaliseServer(url) {
+    let s = String(url || '').trim();
+    if (!s) return '';
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    return s.replace(/\/+$/, '');
+  }
+
+  SY.loadConfig = function () {
+    if (configLoaded) return configLoaded;
+    configLoaded = Promise.all([DB.kvGet('serverUrl', ''), DB.kvGet('apiToken', null)])
+      .then(function (res) {
+        SY.serverUrl = res[0] || '';
+        SY.token = res[1] && res[1].token ? res[1].token : null;
+        if (res[1] && res[1].user && !SY.state.user) SY.state.user = res[1].user;
+        SY.base = SY.isNative() ? (SY.serverUrl ? SY.serverUrl + '/api/' : '') : 'api/';
+        return true;
+      }).catch(function () { return false; });
+    return configLoaded;
+  };
+
+  SY.setServerUrl = function (url) {
+    SY.serverUrl = normaliseServer(url);
+    SY.token = null;
+    SY.state.user = null;
+    SY.state.maps = [];
+    SY.base = SY.isNative() ? (SY.serverUrl ? SY.serverUrl + '/api/' : '') : 'api/';
+    return Promise.all([
+      DB.kvSet('serverUrl', SY.serverUrl),
+      DB.kvSet('apiToken', null)
+    ]).catch(function () {}).then(function () { return SY.probe(); });
+  };
+
+  SY.saveToken = function (json) {
+    SY.token = json.token;
+    SY.state.user = json.user || null;
+    return DB.kvSet('apiToken', {
+      token: json.token, user: json.user || null, expiresAt: json.expires_at || null
+    }).catch(function () {});
+  };
+
+  SY.clearToken = function () {
+    SY.token = null;
+    SY.state.user = null;
+    return DB.kvSet('apiToken', null).catch(function () {});
+  };
+
+  /** Absolute URL for something the server told us about (a map file). */
+  SY.url = function (pathOrUrl) {
+    if (!pathOrUrl) return pathOrUrl;
+    if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+    if (!SY.isNative() || !SY.serverUrl) return pathOrUrl;
+    return SY.serverUrl + (pathOrUrl.charAt(0) === '/' ? '' : '/') + pathOrUrl;
+  };
+
+  /** fetch() with the bearer token when this is the native app. */
+  SY.authFetch = function (url, opts) {
+    const o = Object.assign({}, opts || {});
+    o.headers = Object.assign({}, o.headers || {});
+    if (SY.token) o.headers.Authorization = 'Bearer ' + SY.token;
+    o.credentials = SY.isNative() ? 'omit' : 'same-origin';
+    if (!o.cache) o.cache = 'no-store';
+    return fetch(SY.url(url), o);
+  };
+
   function api(path, opts) {
-    return fetch(SY.base + path, Object.assign({
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      credentials: 'same-origin'
-    }, opts || {})).then(function (res) {
+    if (SY.isNative() && !SY.serverUrl) {
+      const err = new Error('No server address set');
+      err.code = 'no-server';
+      return Promise.reject(err);
+    }
+    const o = Object.assign({}, opts || {});
+    o.headers = Object.assign({ Accept: 'application/json' }, o.headers || {});
+    if (SY.token) o.headers.Authorization = 'Bearer ' + SY.token;
+    o.credentials = SY.isNative() ? 'omit' : 'same-origin';
+    o.cache = 'no-store';
+    return fetch((SY.base || 'api/') + path, o).then(function (res) {
       if (!res.ok) return httpError(res);
       return res.json();
     });
@@ -65,21 +145,38 @@
     });
   }
 
-  /** Sign in with a local account on the server (session cookie). */
+  /**
+   * Sign in. On the web this is the server session; in the native app it exchanges
+   * the password for a long-lived bearer token, which is what lets the app keep its
+   * bundled files (offline start) and still reach the server.
+   */
   SY.login = function (username, password) {
-    return postJson('login/', { username: username, password: password })
-      .then(function (json) {
-        SY.state.user = json.user || null;
-        return SY.probe().then(function () {
-          return SY.syncNow(true).then(function () { return json; });
-        });
+    const call = SY.isNative()
+      ? postJson('token/', { username: username, password: password, label: nativeLabel() })
+        .then(function (json) { return SY.saveToken(json).then(function () { return json; }); })
+      : postJson('login/', { username: username, password: password })
+        .then(function (json) { SY.state.user = json.user || null; return json; });
+    return call.then(function (json) {
+      return SY.probe().then(function () {
+        return SY.syncNow(true).then(function () { return json; });
       });
+    });
   };
 
   SY.register = function (username, password) {
     return postJson('register/', { username: username, password: password })
       .then(function (json) {
+        if (SY.isNative()) {
+          // The account exists now; exchange the password for a token.
+          return postJson('token/', { username: username, password: password,
+            label: nativeLabel() }).then(function (tok) {
+            return SY.saveToken(tok).then(function () { return json; });
+          });
+        }
         SY.state.user = json.user || null;
+        return json;
+      })
+      .then(function (json) {
         return SY.probe().then(function () {
           return SY.syncNow(true).then(function () { return json; });
         });
@@ -87,11 +184,26 @@
   };
 
   SY.logout = function () {
+    if (SY.isNative()) {
+      // Revoke this device's token; other phones keep theirs.
+      const done = SY.token
+        ? api('token/', { method: 'DELETE' }).catch(function () {})
+        : Promise.resolve();
+      return done.then(function () {
+        return SY.clearToken().then(function () { return SY.probe(); });
+      });
+    }
     return postJson('logout/', {}).then(function () {
       SY.state.user = null;
       return SY.probe();
     });
   };
+
+  function nativeLabel() {
+    const p = (H.Native && H.Native.platform) || 'app';
+    return (p === 'ios' ? 'iPhone/iPad' : p === 'android' ? 'Android' : p) + ' app';
+  }
+
 
   /** Edit a map's metadata on the server (name, page, notes, place). */
   SY.updateMeta = function (id, fields) {
@@ -137,6 +249,21 @@
   /** Ask the server what it knows: accounts, version, maps. */
   SY.diag = function () {
     return api('diag/');
+  };
+
+  /** Everything the server holds about this account, as JSON (data export). */
+  SY.exportAccount = function () {
+    return api('account/');
+  };
+
+  /** Erase the account, its files, spots and tracks (token or session auth). */
+  SY.deleteAccount = function () {
+    return api('account/', { method: 'DELETE' }).then(function (json) {
+      SY.state.user = null;
+      SY.state.maps = [];
+      if (SY.isNative()) return SY.clearToken().then(function () { return json; });
+      return json;
+    });
   };
 
   /* ---------------------- spots and tracks (per account) ---------------------- */
@@ -346,6 +473,20 @@
   /** Ask the server for the library. Resolves true when a HuntMap server answers. */
   SY.probe = function () {
     if (location.protocol === 'file:' || !navigator.onLine) return Promise.resolve(false);
+    return SY.loadConfig().then(function () {
+      if (SY.isNative() && !SY.serverUrl) {
+        // The app works offline with no server; say so instead of failing silently.
+        SY.state.enabled = false;
+        SY.state.maps = [];
+        SY.state.error = 'no-server-address';
+        notify();
+        return false;
+      }
+      return probeNow();
+    });
+  };
+
+  function probeNow() {
     if (!SY.available()) {
       // Static hosting (no Django): stay hidden, never ask for /api/.
       SY.state.enabled = false;
@@ -373,7 +514,7 @@
       notify();
       return false;
     });
-  };
+  }
 
   SY.localLayer = function (remoteId) {
     for (let i = 0; i < D.layers.length; i++) {
@@ -408,7 +549,7 @@
     notify();
 
     const maxPx = opts.maxPx || 3000;
-    return fetch(remote.file_url, { cache: 'no-store' })
+    return SY.authFetch(remote.file_url)
       .then(function (res) {
         if (!res.ok) {
           const err = new Error('Download failed (HTTP ' + res.status + ')');

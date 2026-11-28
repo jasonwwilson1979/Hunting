@@ -63,6 +63,14 @@ HUNTMAP_ATTRIBUTION_URL = env("HUNTMAP_ATTRIBUTION_URL",
 # public-domain USGS. Community/third-party tile servers are hidden.
 HUNTMAP_COMMERCIAL = env("HUNTMAP_COMMERCIAL", "0") == "1"
 
+# Native (Capacitor) app support: these origins may call /api/ cross-origin, and
+# POST /api/token/ issues a bearer token for them (the shell cannot share the web
+# session cookie). Add your own origin if you wrap the app differently.
+HUNTMAP_NATIVE_ORIGINS = env(
+    "HUNTMAP_NATIVE_ORIGINS",
+    "capacitor://localhost,ionic://localhost,https://localhost,http://localhost")
+HUNTMAP_TOKEN_DAYS = int(env("HUNTMAP_TOKEN_DAYS", "365"))
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -82,6 +90,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Native (Capacitor) clients: CORS for /api/ and bearer-token login.
+    "huntmap_server.native.NativeApiMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

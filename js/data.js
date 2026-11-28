@@ -66,49 +66,58 @@
      they survive dark forest on the map. */
   D.SHAPES = {
     stand: {
-      fill: '<path fill-rule="evenodd" d="M5.6 5.2h7.2v2.1H5.6zM5.6 8.9h12.8v1.9H5.6zM15.2 5.2h3.2v2.1h-3.2z"/>',
-      line: '<path d="M6.6 8.9V5.2M18.4 8.9V5.2M8.4 10.8v9.6M15.6 10.8v9.6M8.4 13.6h7.2M8.4 16.6h7.2M8.4 19.4h7.2"/>'
+      fill: '<path fill-rule="evenodd" d="M5.6 5.2h7.2v2.1H5.6zM5.6 8.9h12.8v1.9H5.6zM15.2 5.2h3.2v2.1h-3.2z"/>' +
+        '<path d="M19.4 3.4h1.8v18.2h-1.8z"/>',
+      line: '<path d="M6.6 8.9V5.2M18.4 8.9V5.2M8.4 10.8v9.6M15.6 10.8v9.6M8.4 13.6h7.2M8.4 16.6h7.2M8.4 19.4h7.2"/>' +
+        '<path d="M19.4 9.6l1.2-1.6M19.4 14.2l1.4-1.4" stroke-width="1.4"/>'
     },
     blind: {
-      fill: '<path fill-rule="evenodd" d="M3.4 19.6a8.6 8.6 0 0 1 17.2 0zM8.6 14.4h6.8v2.6H8.6z"/>',
-      line: ''
+      fill: '<path fill-rule="evenodd" d="M3.4 19.6a8.6 8.6 0 0 1 17.2 0zM8.2 13.8h3v2.4h-3zM12.9 13.8h3v2.4h-3z"/>',
+      line: '<path d="M6.4 18.2c1.4-1 2.6-.4 3.8-1.2M13.8 18.4c1.4-.8 2.6-.2 3.6-1" stroke-width="1.4"/>'
     },
     building: {
-      fill: '<path fill-rule="evenodd" d="M2.8 20.4V10.2L12 3.4l9.2 6.8v10.2zM9.6 20.4v-5.8h4.8v5.8zM15.8 6.2h2.2v3.6h-2.2z"/>',
-      line: ''
+      fill: '<path fill-rule="evenodd" d="M2.8 20.4V10.2L12 3.4l9.2 6.8v10.2zM9.6 20.4v-5.8h4.8v5.8zM15.8 6.2h2.2v3.6h-2.2zM5.6 12.2h3.2v2.8H5.6zM15.2 12.2h3.2v2.8h-3.2z"/>',
+      line: '<path d="M6.1 12.2v2.8M5.6 13.6h3.2" stroke-width="1.4"/>'
     },
     deer: {
       fill: '<path d="M8.8 11.4h5.6c2.3 0 4 1.5 4.2 3.6l.2 2.2H8.2l-.2-2.2c-.1-2 .8-3.6.8-3.6z"/>' +
         '<path d="M9.6 12.6 8.2 8.6l1.7-.9 1.7 4.6z"/>' +
-        '<path d="M7.2 8.9c-.5-1-.2-2.1.7-2.4l2.3-.6.6 2.7-2.2 1z"/>' +
+        '<path fill-rule="evenodd" d="M7.2 8.9c-.5-1-.2-2.1.7-2.4l2.3-.6.6 2.7-2.2 1zM7.9 8.3a.45.45 0 1 0 0-.9.45.45 0 0 0 0 .9z"/>' +
         '<path d="M7.6 7.4 5.4 8.3l2.1.8z"/>' +
         '<path d="M8.7 6.3 6.9 4.6l.4 2.5z"/>' +
+        '<path d="M8.9 6.2 10 5.1l.5 1.6z"/>' +
         '<path d="M18.6 12.6l1.4 1.5-1.9.7z"/>',
       line: '<path d="M7.9 6.4 6.4 3.5M7.4 5.4 4.9 4.8M6.8 4.5 6 2.7M8 6.4 9.6 4.2M9 4.7l1.7-1.3"/>' +
-        '<path d="M9.8 17.2v3.9M11.6 17.2v3.9M15.8 17.2v3.9M18 17.2v3.9"/>'
+        '<path d="M7.6 6.1l-.9-1.4"/>' +
+        '<path d="M9.8 17.2v3.9M11.6 17.2v3.9M15.8 17.2v3.9M18 17.2v3.9"/>' +
+        '<path d="M9.8 19.4h1.8M15.8 19.4h1.8"/>'
     },
     bear: {
       fill: '<path d="M8.8 12.4c.2-2.7 2.4-4.3 5.2-4.3l1.6.1c2.4.2 4 1.9 4.2 4.2l.2 1.9H8.2z"/>' +
-        '<path d="M7.5 12.1a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4z"/>' +
+        '<path fill-rule="evenodd" d="M7.5 12.1a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4zM6.4 14.2a.45.45 0 1 0 0-.9.45.45 0 0 0 0 .9z"/>' +
         '<path d="M5.4 12.9 3.4 13.6l1.9 1.2z"/>' +
-        '<path d="M6.2 9.8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"/>' +
-        '<path d="M9.7 9.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>' +
+        '<path fill-rule="evenodd" d="M6.2 9.8a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM6.2 11a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z"/>' +
+        '<path fill-rule="evenodd" d="M9.7 9.6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM9.7 10.7a.65.65 0 1 0 0 1.3.65.65 0 0 0 0-1.3z"/>' +
         '<path d="M19.8 13.2l1.6 1.2-1.8.9z"/>',
-      line: '<path d="M9.2 18.7v2.6M11.6 18.7v2.6M15.4 18.7v2.6M17.8 18.7v2.6"/>'
+      line: '<path d="M9.2 18.7v2.6M11.6 18.7v2.6M15.4 18.7v2.6M17.8 18.7v2.6"/>' +
+        '<path d="M8.5 21.3l.9-.9M10.9 21.3l.9-.9M14.7 21.3l.9-.9M17.1 21.3l.9-.9"/>'
     },
     turkey: {
       fill: '<path d="M6.6 14.2a4.7 3.6 0 1 1 9.4 0 4.7 3.6 0 0 1-9.4 0z"/>' +
         '<path d="M14.6 12.6 21.6 5.2l.9 3.5z"/>' +
         '<path d="M15.2 13.6 22.9 9.3l.2 3.5z"/>' +
         '<path d="M15.3 14.6 22.6 13.5l-.9 3.4z"/>' +
-        '<path d="M8.1 10.6a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8z"/>' +
+        '<path fill-rule="evenodd" d="M8.1 10.6a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8zM7.7 11.6a.4.4 0 1 0 0-.8.4.4 0 0 0 0 .8z"/>' +
         '<path d="M9.2 11.4 7.9 9.2l2.1.5z"/>' +
         '<path d="M7.4 10.2 5.7 10.6l1.5 1z"/>',
-      line: '<path d="M9.8 17.6v3.1M12.6 17.6v3.1M9.1 20.8h1.4M11.9 20.8h1.4"/>'
+      line: '<path d="M7.4 13.2c1.6 1.4 4.4 1.6 6.6.4"/>' +
+        '<path d="M10.6 12.2v3.2" opacity=".55"/>' +
+        '<path d="M9.8 17.6v3.1M12.6 17.6v3.1M9.1 20.8h1.4M11.9 20.8h1.4"/>'
     },
     cam: {
-      fill: '<path fill-rule="evenodd" d="M4 8.6h12.6a2.2 2.2 0 0 1 2.2 2.2v6a2.2 2.2 0 0 1-2.2 2.2H4zM12.2 11.4a2.9 2.9 0 1 0 0 5.8 2.9 2.9 0 0 0 0-5.8zM5.9 10.8h1.7v1.7H5.9z"/>',
-      line: '<path d="M19.4 10.4h2.2v6.4h-2.2M15.8 8.6V6.2M6 19v1.6M15 19v1.6"/>'
+      fill: '<path fill-rule="evenodd" d="M4 8.6h12.6a2.2 2.2 0 0 1 2.2 2.2v6a2.2 2.2 0 0 1-2.2 2.2H4zM12.2 11.4a2.9 2.9 0 1 0 0 5.8 2.9 2.9 0 0 0 0-5.8zM12.2 12.5a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zM5.9 10.8h1.7v1.7H5.9z"/>',
+      line: '<path d="M19.4 10.4h2.2v6.4h-2.2M15.8 8.6V6.2M6 19v1.6M15 19v1.6"/>' +
+        '<path d="M5.6 15.4h.01M7.2 15.4h.01M5.6 16.8h.01M7.2 16.8h.01" stroke-width="1.6"/>'
     },
     water: {
       fill: '<path d="M12 3.1c3.7 4.4 6.1 7.4 6.1 10.1a6.1 6.1 0 0 1-12.2 0c0-2.7 2.4-5.7 6.1-10.1z"/>',
@@ -195,7 +204,7 @@
     const key = info.icon;
     if (Object.prototype.hasOwnProperty.call(pinIcons, key)) return pinIcons[key] || null;
     pinIcons[key] = null;
-    const svg = D.shapeSvg(type, { size: 96, halo: true });
+    const svg = D.shapeSvg(type, { size: 160, halo: true });
     const img = new Image();
     img.onload = function () {
       pinIcons[key] = img;
@@ -209,6 +218,7 @@
   D.DEFAULT_SETTINGS = {
     units: 'imperial', coordFormat: 'dd', night: false, awake: true, highAccuracy: true,
     labels: true, grid: false, trail: true,
+    zoneAlerts: true, zoneSound: true, zoneVibrate: true, zoneShow: true,
     provider: null,          // null = choose a sensible default for the location on first run
     tiles: true,
     lastView: null, targetId: null, selectedLayerId: null, helpSeen: false
@@ -568,6 +578,7 @@
       settings: D.settings,
       waypoints: D.waypoints,
       tracks: D.tracks,
+      zones: (H.Zones ? H.Zones.export() : []),
       layers: D.layers.map(function (l) {
         return {
           id: l.id, name: l.name, kind: l.kind, page: l.page,
@@ -589,6 +600,10 @@
       D.layers = [];
     }
     const jobs = [];
+
+    if (H.Zones && Array.isArray(obj.zones)) {
+      H.Zones.restore(obj.zones, replace);
+    }
 
     (obj.waypoints || []).forEach(function (w) {
       if (!w || !isFinite(w.lat) || !isFinite(w.lon)) return;
